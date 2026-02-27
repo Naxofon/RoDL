@@ -2,13 +2,13 @@ services:
   prefect-db:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: prefect
-      POSTGRES_PASSWORD: prefect
-      POSTGRES_DB: prefect
+      POSTGRES_USER: ${PREFECT_DB_USER}
+      POSTGRES_PASSWORD: ${PREFECT_DB_PASSWORD}
+      POSTGRES_DB: ${PREFECT_DB_NAME}
     ports:
       - "24110:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U prefect"]
+      test: ["CMD-SHELL", "pg_isready -U ${PREFECT_DB_USER}"]
       interval: 10s
       timeout: 5s
       retries: 60
@@ -28,7 +28,7 @@ services:
       PREFECT_SERVER_API_HOST: "0.0.0.0"
       PREFECT_UI_API_URL: "http://localhost:4200/api"
       PREFECT_SERVER_API_CORS_ALLOW_ORIGINS: "*"
-      PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://prefect:prefect@prefect-db:5432/prefect"
+      PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://${PREFECT_DB_USER}:${PREFECT_DB_PASSWORD}@prefect-db:5432/${PREFECT_DB_NAME}"
       PREFECT_API_DATABASE_CONNECTION_TIMEOUT: "30"
       PREFECT_API_DATABASE_TIMEOUT: "120"
     volumes:
@@ -42,16 +42,16 @@ services:
       prefect-server:
         condition: service_started
     environment:
-      TZ: ${TZ:-Asia/Novosibirsk}
+      TZ: ${TZ}
       PYTHONPATH: /workspace/prefect_loader
       PREFECT_API_URL: http://prefect-server:4200/api
       PREFECT_LOGGING_LEVEL: INFO
-      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST:-clickhouse}
-      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT:-8123}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-loader_worker}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-loaderpass}
-      CLICKHOUSE_ACCESS_USER: ${CLICKHOUSE_ACCESS_USER:-root}
-      CLICKHOUSE_ACCESS_PASSWORD: ${CLICKHOUSE_ACCESS_PASSWORD:-rootpass}
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_ACCESS_USER: ${CLICKHOUSE_ACCESS_USER}
+      CLICKHOUSE_ACCESS_PASSWORD: ${CLICKHOUSE_ACCESS_PASSWORD}
     command: ["bash", "config/scripts/bootstrap_prefect.sh"]
     volumes:
       - .:/workspace/prefect_loader
@@ -67,25 +67,23 @@ services:
       - "8123:8123"
       - "9000:9000"
     environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_ADMIN_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD}
+      CLICKHOUSE_APP_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_APP_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_APP_ACCESS_USER: ${CLICKHOUSE_ACCESS_USER}
+      CLICKHOUSE_APP_ACCESS_PASSWORD: ${CLICKHOUSE_ACCESS_PASSWORD}
       CLICKHOUSE_DB: loader
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
-      CLICKHOUSE_APP_USER: ${CLICKHOUSE_USER:-default_user}
-      CLICKHOUSE_APP_PASSWORD: ${CLICKHOUSE_PASSWORD:-tteesstt}
-      CLICKHOUSE_APP_ACCESS_USER: ${CLICKHOUSE_ACCESS_USER:-access_user}
-      CLICKHOUSE_APP_ACCESS_PASSWORD: ${CLICKHOUSE_ACCESS_PASSWORD:-accesspass}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
       CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS: 1
       CLICKHOUSE_SKIP_USER_SETUP: 1
-      CLICKHOUSE_ADMIN_USER: ${CLICKHOUSE_ADMIN_USER:-default}
-      CLICKHOUSE_ADMIN_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:-}
       LOADER_CONFIG_PATH: /workspace/config/loaders.yaml
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
     healthcheck:
-      test: ["CMD", "clickhouse-client", "--user", "${CLICKHOUSE_USER:-default_user}", "--password", "${CLICKHOUSE_PASSWORD:-tteesstt}", "--query", "SELECT 1"]
+      test: ["CMD", "clickhouse-client", "--user", "${CLICKHOUSE_ADMIN_USER}", "--password", "${CLICKHOUSE_ADMIN_PASSWORD}", "--query", "SELECT 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -108,16 +106,16 @@ services:
         condition: service_healthy
     environment:
       TZ: ${TZ}
+      PYTHONPATH: /workspace/prefect_loader
+      PREFECT_API_URL: http://prefect-server:4200/api
+      PREFECT_LOGGING_LEVEL: INFO
+      PREFECT_WORKER_NAME: default-agent
       CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
       CLICKHOUSE_PORT: ${CLICKHOUSE_PORT}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_ACCESS_USER: ${CLICKHOUSE_ACCESS_USER}
       CLICKHOUSE_ACCESS_PASSWORD: ${CLICKHOUSE_ACCESS_PASSWORD}
-      PYTHONPATH: /workspace/prefect_loader
-      PREFECT_API_URL: http://prefect-server:4200/api
-      PREFECT_LOGGING_LEVEL: INFO
-      PREFECT_WORKER_NAME: default-agent
     command: ["bash", "config/scripts/run_worker.sh"]
     restart: unless-stopped
     volumes:
@@ -135,17 +133,17 @@ services:
         condition: service_healthy
     environment:
       TZ: ${TZ}
+      PYTHONPATH: /workspace
+      PREFECT_API_URL: http://prefect-server:4200/api
+      PREFECT_WORK_POOL: default-agent-pool
       CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
       CLICKHOUSE_PORT: ${CLICKHOUSE_PORT}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_ACCESS_USER: ${CLICKHOUSE_ACCESS_USER}
       CLICKHOUSE_ACCESS_PASSWORD: ${CLICKHOUSE_ACCESS_PASSWORD}
-      PYTHONPATH: /workspace
-      PREFECT_API_URL: http://prefect-server:4200/api
-      PREFECT_WORK_POOL: default-agent-pool
-      ADMIN_BOT_TOKEN: ${ADMIN_BOT_TOKEN:?set ADMIN_BOT_TOKEN}
-      ADMIN_REGISTRATION_CODE: ${ADMIN_REGISTRATION_CODE:-}
+      ADMIN_BOT_TOKEN: ${ADMIN_BOT_TOKEN}
+      ADMIN_REGISTRATION_CODE: ${ADMIN_REGISTRATION_CODE}
     volumes:
       - .:/workspace/prefect_loader
     working_dir: /workspace/prefect_loader

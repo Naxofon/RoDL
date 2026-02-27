@@ -8,8 +8,8 @@ def get_kb_direct():
             types.InlineKeyboardButton(text="📋 Клиенты Директа", callback_data="command_yd_clients"),
         ],
         [
-            types.InlineKeyboardButton(text="➕ Агентский токен", callback_data="command_add_yd_agent"),
-            types.InlineKeyboardButton(text="➕ Клиентский токен", callback_data="command_add_yd_client"),
+            types.InlineKeyboardButton(text="➕ Агентский", callback_data="command_add_yd_agent"),
+            types.InlineKeyboardButton(text="➕ Клиентский", callback_data="command_add_yd_client"),
         ],
         [
             types.InlineKeyboardButton(text="🗑️ Удалить клиента", callback_data="command_remove_yd_clients"),

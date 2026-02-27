@@ -284,7 +284,7 @@ ORDER BY (type, container, login);
 
 ```bash
 mkdir rodl && cd rodl
-git clone <repository-url> prefect_loader
+git clone https://github.com/Naxofon/RoDL.git
 ```
 
 ### Шаг 2: Настройка переменных окружения

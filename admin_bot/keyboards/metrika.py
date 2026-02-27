@@ -8,8 +8,8 @@ def get_kb_metrika():
             types.InlineKeyboardButton(text="📋 Клиенты Метрики", callback_data="command_ym_clients"),
         ],
         [
-            types.InlineKeyboardButton(text="➕ Агентский аккаунт", callback_data="command_add_ym_agent"),
-            types.InlineKeyboardButton(text="➕ Клиентский аккаунт", callback_data="command_add_ym_client"),
+            types.InlineKeyboardButton(text="➕ Агентский", callback_data="command_add_ym_agent"),
+            types.InlineKeyboardButton(text="➕ Клиентский", callback_data="command_add_ym_client"),
         ],
         [
             types.InlineKeyboardButton(text="🗑️ Удалить клиента", callback_data="command_remove_ym_clients"),
