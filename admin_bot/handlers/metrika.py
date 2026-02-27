@@ -5,7 +5,8 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from keyboards.inline import get_kb_main, get_kb_metrika, get_kb_cancel
+from keyboards.inline import get_kb_main, get_kb_cancel
+from keyboards.metrika import get_kb_metrika
 from services.prefect_client import (
     trigger_prefect_run,
     wait_for_prefect_flow_run,

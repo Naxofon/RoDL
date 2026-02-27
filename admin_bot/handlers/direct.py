@@ -6,7 +6,8 @@ from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from keyboards.inline import get_kb_main, get_kb_direct
+from keyboards.inline import get_kb_main
+from keyboards.direct import get_kb_direct
 from prefect_loader.orchestration.clickhouse_utils import AsyncDirectDatabase, sanitize_login
 from prefect_loader.connectors.direct_loader import (
     DIRECT_TYPE_AGENCY_PARSED,

@@ -26,76 +26,25 @@ def get_kb_main():
             display_name = config.get("display_name", default_text)
             buttons.append([types.InlineKeyboardButton(text=display_name, callback_data=callback_data)])
 
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
-
-def get_kb_metrika():
-    """Metrika management keyboard."""
-    buttons = [
-        [
-            types.InlineKeyboardButton(text="📋 Клиенты Метрики", callback_data="command_ym_clients"),
-        ],
-        [
-            types.InlineKeyboardButton(text="➕ Агентский аккаунт", callback_data="command_add_ym_agent"),
-            types.InlineKeyboardButton(text="➕ Клиентский аккаунт", callback_data="command_add_ym_client"),
-        ],
-        [
-            types.InlineKeyboardButton(text="🗑️ Удалить клиента", callback_data="command_remove_ym_clients"),
-            types.InlineKeyboardButton(text="🏢 Удалить агентство", callback_data="command_remove_ym_agency"),
-        ],
-        [
-            types.InlineKeyboardButton(text="💾 Выгрузка", callback_data="command_upload_ym_data"),
-        ],
-        [
-            types.InlineKeyboardButton(text="⬅️ Главное меню", callback_data="command_back_main_menu"),
-        ],
-    ]
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
-
-
-def get_kb_direct():
-    """Direct management keyboard."""
-    buttons = [
-        [
-            types.InlineKeyboardButton(text="📋 Клиенты Директа", callback_data="command_yd_clients"),
-        ],
-        [
-            types.InlineKeyboardButton(text="➕ Агентский токен", callback_data="command_add_yd_agent"),
-            types.InlineKeyboardButton(text="➕ Клиентский токен", callback_data="command_add_yd_client"),
-        ],
-        [
-            types.InlineKeyboardButton(text="🗑️ Удалить клиента", callback_data="command_remove_yd_clients"),
-            types.InlineKeyboardButton(text="🏢 Удалить агентство", callback_data="command_remove_yd_agency"),
-        ],
-        [
-            types.InlineKeyboardButton(text="💾 Выгрузка", callback_data="command_upload_yd_data"),
-        ],
-        [
-            types.InlineKeyboardButton(text="⬅️ Главное меню", callback_data="command_back_main_menu"),
-        ],
-    ]
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def get_kb_admin():
     """Admin panel keyboard."""
     buttons = [
-                [types.InlineKeyboardButton(text="👤 Добавить администратора", callback_data="add_admin")],
-                [types.InlineKeyboardButton(text="➕ Добавить пользователя", callback_data="add_alpha")],
-                [types.InlineKeyboardButton(text="➖ Снять права", callback_data="remove_admin")],
-                [types.InlineKeyboardButton(text="💾 Выгрузка Метрики", callback_data="admin_upload_all_metrika")],
-                [types.InlineKeyboardButton(text="💾 Выгрузка Директа", callback_data="admin_upload_all_direct")],
-                [types.InlineKeyboardButton(text="💾 Выгрузка Calltouch", callback_data="admin_upload_all_calltouch")],
-                [types.InlineKeyboardButton(text="💾 Выгрузка VK Ads", callback_data="admin_upload_all_vk")],
-                [types.InlineKeyboardButton(text="📦 Бэкап доступов", callback_data="admin_access_backup_menu")],
-                [types.InlineKeyboardButton(text="🧹 Очистка старых клиентов", callback_data="admin_cleanup_stale")],
-                [types.InlineKeyboardButton(text="🗑️ Полная очистка БД", callback_data="admin_reset_database")],
-                [types.InlineKeyboardButton(text="⬅️ Главное меню", callback_data="command_back_main_menu")],
-            ]
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
+        [types.InlineKeyboardButton(text="👤 Добавить администратора", callback_data="add_admin")],
+        [types.InlineKeyboardButton(text="➕ Добавить пользователя", callback_data="add_alpha")],
+        [types.InlineKeyboardButton(text="➖ Снять права", callback_data="remove_admin")],
+        [types.InlineKeyboardButton(text="💾 Выгрузка Метрики", callback_data="admin_upload_all_metrika")],
+        [types.InlineKeyboardButton(text="💾 Выгрузка Директа", callback_data="admin_upload_all_direct")],
+        [types.InlineKeyboardButton(text="💾 Выгрузка Calltouch", callback_data="admin_upload_all_calltouch")],
+        [types.InlineKeyboardButton(text="💾 Выгрузка VK Ads", callback_data="admin_upload_all_vk")],
+        [types.InlineKeyboardButton(text="📦 Бэкап доступов", callback_data="admin_access_backup_menu")],
+        [types.InlineKeyboardButton(text="🧹 Очистка старых клиентов", callback_data="admin_cleanup_stale")],
+        [types.InlineKeyboardButton(text="🗑️ Полная очистка БД", callback_data="admin_reset_database")],
+        [types.InlineKeyboardButton(text="⬅️ Главное меню", callback_data="command_back_main_menu")],
+    ]
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def get_kb_admin_backup():
@@ -108,54 +57,7 @@ def get_kb_admin_backup():
             types.InlineKeyboardButton(text="⬅️ Админ-панель", callback_data="admin_access_backup_back"),
         ],
     ]
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
-
-
-def get_kb_calltouch():
-    """Calltouch management keyboard."""
-    buttons = [
-        [
-            types.InlineKeyboardButton(text="📋 Клиенты Calltouch", callback_data="command_ct_clients"),
-        ],
-        [
-            types.InlineKeyboardButton(text="➕ Добавить клиента", callback_data="command_add_ct_client"),
-        ],
-        [
-            types.InlineKeyboardButton(text="🗑️ Удалить клиента", callback_data="command_remove_ct_clients"),
-        ],
-        [
-            types.InlineKeyboardButton(text="💾 Выгрузка", callback_data="command_upload_ct_data"),
-        ],
-        [
-            types.InlineKeyboardButton(text="⬅️ Главное меню", callback_data="command_back_main_menu"),
-        ],
-    ]
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
-
-
-def get_kb_vk():
-    """VK Ads management keyboard."""
-    buttons = [
-        [
-            types.InlineKeyboardButton(text="📋 Агентства VK", callback_data="command_vk_agencies"),
-        ],
-        [
-            types.InlineKeyboardButton(text="➕ Добавить агентство", callback_data="command_add_vk_agency"),
-        ],
-        [
-            types.InlineKeyboardButton(text="🗑️ Удалить агентство", callback_data="command_remove_vk_agency"),
-        ],
-        [
-            types.InlineKeyboardButton(text="💾 Выгрузка", callback_data="command_upload_vk_data"),
-        ],
-        [
-            types.InlineKeyboardButton(text="⬅️ Главное меню", callback_data="command_back_main_menu"),
-        ],
-    ]
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def get_kb_back_main_menu():
@@ -163,8 +65,7 @@ def get_kb_back_main_menu():
     buttons = [
         [types.InlineKeyboardButton(text="⬅️ Главное меню", callback_data="command_back_main_menu")],
     ]
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def get_kb_reset_confirm(service: str):
@@ -175,8 +76,7 @@ def get_kb_reset_confirm(service: str):
             types.InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_reset"),
         ],
     ]
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def get_kb_cancel():
@@ -184,5 +84,4 @@ def get_kb_cancel():
     buttons = [
         [types.InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_input")],
     ]
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)

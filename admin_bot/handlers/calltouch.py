@@ -7,7 +7,7 @@ from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from keyboards.inline import get_kb_calltouch
+from keyboards.calltouch import get_kb_calltouch
 from services.prefect_client import trigger_prefect_run, wait_for_prefect_flow_run
 from config.settings import settings
 from prefect_loader.orchestration.clickhouse_utils import AsyncCalltouchDatabase

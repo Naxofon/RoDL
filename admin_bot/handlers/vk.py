@@ -5,7 +5,8 @@ from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from keyboards.inline import get_kb_vk, get_kb_cancel
+from keyboards.inline import get_kb_cancel
+from keyboards.vk import get_kb_vk
 from prefect_loader.orchestration.clickhouse_utils import AsyncVkDatabase
 from prefect_loader.connectors.vk_loader.access import get_vk_agencies
 from services.prefect_client import (
