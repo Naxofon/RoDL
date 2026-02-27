@@ -15,7 +15,6 @@
 - [Управление изменениями (Change Tracking)](#управление-изменениями-change-tracking)
 - [Разработка и расширение](#разработка-и-расширение)
 - [Участие в разработке](#участие-в-разработке)
-- [Изменения и версии](#изменения-и-версии)
 - [Безопасность](#безопасность)
 - [Лицензия](#лицензия)
 
@@ -295,30 +294,7 @@ git clone https://github.com/Naxofon/RoDL.git
 cp .env.example .env
 ```
 
-Отредактируйте `.env`:
-
-```bash
-# Пользователи ClickHouse
-CLICKHOUSE_USER=default_user
-CLICKHOUSE_PASSWORD=your_secure_password
-
-CLICKHOUSE_ACCESS_USER=access_user
-CLICKHOUSE_ACCESS_PASSWORD=access_secure_password
-
-# Хост ClickHouse (для docker-compose используйте "clickhouse")
-CLICKHOUSE_HOST=clickhouse
-CLICKHOUSE_PORT=8123
-
-# Часовой пояс
-TZ=Asia/Novosibirsk
-
-# API Prefect
-PREFECT_API_URL=http://localhost:4200/api
-
-# Telegram бот
-ADMIN_BOT_TOKEN=your_telegram_bot_token
-ADMIN_REGISTRATION_CODE=your_secure_registration_code
-```
+Отредактируйте `.env`
 
 ### Шаг 3: Запуск инфраструктуры
 
@@ -363,7 +339,7 @@ docker compose up -d
 
 ```yaml
 databases:
-  default: loader   # служебная БД и таблица Accesses
+  default: loader
   access: loader
 
 loaders:
@@ -399,20 +375,20 @@ loaders:
 #### ClickHouse
 
 ```bash
-CLICKHOUSE_USER=default_user         # основной пользователь для данных
+CLICKHOUSE_USER=default_user
 CLICKHOUSE_PASSWORD=strong_password
 
-CLICKHOUSE_ACCESS_USER=access_user   # пользователь только для таблицы Accesses
+CLICKHOUSE_ACCESS_USER=access_user
 CLICKHOUSE_ACCESS_PASSWORD=access_password
 
-CLICKHOUSE_HOST=clickhouse           # или localhost для локальной работы
-CLICKHOUSE_PORT=8123                 # HTTP интерфейс
+CLICKHOUSE_HOST=clickhouse
+CLICKHOUSE_PORT=8123
 ```
 
 #### Системные
 
 ```bash
-TZ=Asia/Novosibirsk                  # часовой пояс (для корректного планирования)
+TZ=Asia/Novosibirsk
 PREFECT_API_URL=http://localhost:4200/api
 ```
 
@@ -420,7 +396,7 @@ PREFECT_API_URL=http://localhost:4200/api
 
 ```bash
 ADMIN_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
-ADMIN_REGISTRATION_CODE=your_secure_code  # код регистрации новых пользователей бота
+ADMIN_REGISTRATION_CODE=your_secure_code  # код регистрации первого пользователя бота
 ```
 
 ### Настройка пользователей ClickHouse
@@ -547,7 +523,6 @@ Telegram Bot предоставляет удобный интерфейс для
 ### Запуск бота
 
 ```bash
-# Убедитесь, что ADMIN_BOT_TOKEN установлен в .env
 docker compose up -d admin-bot
 ```
 
@@ -777,11 +752,6 @@ docker compose restart prefect-bootstrap
 
 - [CONTRIBUTING.md](./.github/CONTRIBUTING.md)
 - [CODE_OF_CONDUCT.md](./.github/CODE_OF_CONDUCT.md)
-
-## Изменения и версии
-
-- [CHANGELOG.md](./CHANGELOG.md)
-- [Release Notes v0.1.0](./RELEASE_NOTES_0.1.0.md)
 
 ## Безопасность
 
