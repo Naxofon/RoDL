@@ -40,8 +40,6 @@ else
 fi
 
 echo "[bootstrap] Deploying flows from orchestration/prefect.yaml..."
-for deployment in direct-analytics-change direct-light-hourly direct-light-3h metrika-loader-clickhouse calltouch-loader-clickhouse vk-loader-daily wordstat-loader-clickhouse custom-loader-clickhouse; do
-  prefect --no-prompt deploy --prefect-file orchestration/prefect.yaml --name "${deployment}"
-done
+prefect --no-prompt deploy --prefect-file orchestration/prefect.yaml --all
 
 echo "[bootstrap] Done."
