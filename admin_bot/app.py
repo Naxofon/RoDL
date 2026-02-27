@@ -17,10 +17,6 @@ from orchestration.loader_registry import is_loader_enabled
 from config.settings import settings
 from handlers.commands import router_command
 from handlers.callbacks import router_main
-from handlers.direct import router_direct
-from handlers.metrika import router_metrika
-from handlers.calltouch import router_calltouch
-from handlers.vk import router_vk
 from handlers.admin_panel import router_admin_panel
 from handlers.logs import check_logs
 
@@ -58,6 +54,13 @@ async def shutdown_handler(dp: Dispatcher, bot: Bot):
     await bot.session.close()
 
 
+_CONNECTOR_ROUTERS = [
+    ("metrika_loader", "handlers.metrika", "router_metrika"),
+    ("direct_loader", "handlers.direct", "router_direct"),
+    ("calltouch_loader", "handlers.calltouch", "router_calltouch"),
+    ("vk_loader", "handlers.vk", "router_vk")
+]
+
 async def main() -> None:
     """Main bot entry point."""
     if not settings.BOT_TOKEN:
@@ -68,27 +71,19 @@ async def main() -> None:
 
     dp.include_router(router_command)
     dp.include_router(router_main)
-    dp.include_router(router_metrika)
-    dp.include_router(router_direct)
-    dp.include_router(router_calltouch)
-    dp.include_router(router_vk)
     dp.include_router(router_admin_panel)
 
-    if is_loader_enabled("wordstat_loader"):
+    for loader_name, module_path, router_attr in _CONNECTOR_ROUTERS:
+        if not is_loader_enabled(loader_name):
+            continue
         try:
-            from handlers.wordstat import router_wordstat
-            dp.include_router(router_wordstat)
-            logger.info("Wordstat loader router registered")
+            import importlib
+            module = importlib.import_module(module_path)
+            router = getattr(module, router_attr)
+            dp.include_router(router)
+            logger.info(f"{loader_name} router registered")
         except ImportError as e:
-            logger.warning(f"wordstat_loader enabled but router import failed: {e}")
-
-    if is_loader_enabled("custom_loader"):
-        try:
-            from handlers.custom_loader import router_custom_loader
-            dp.include_router(router_custom_loader)
-            logger.info("Custom loader router registered")
-        except ImportError as e:
-            logger.warning(f"custom_loader enabled but router import failed: {e}")
+            logger.warning(f"{loader_name} enabled but router import failed: {e}")
 
     bot = Bot(
         token=settings.BOT_TOKEN,
