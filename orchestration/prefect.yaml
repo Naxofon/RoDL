@@ -1,0 +1,83 @@
+prefect-version: "3.4.22"
+project:
+  name: loader-dashboard
+deployments:
+  - name: direct-analytics-change
+    entrypoint: orchestration/flows/direct.py:direct_loader_flow
+    schedule:
+      cron: "0 6 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - direct
+      - analytics
+    parameters:
+      track_changes: true
+      profile: "analytics"
+  - name: direct-light-hourly
+    entrypoint: orchestration/flows/direct.py:direct_loader_flow
+    schedule:
+      cron: "0 7-13 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - direct
+      - light
+    parameters:
+      track_changes: true
+      profile: "light"
+  - name: direct-light-3h
+    entrypoint: orchestration/flows/direct.py:direct_loader_flow
+    schedule:
+      cron: "0 14-23/3 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - direct
+      - light
+    parameters:
+      track_changes: true
+      profile: "light"
+  - name: metrika-loader-clickhouse
+    entrypoint: orchestration/flows/metrika.py:metrika_loader_flow
+    schedule:
+      cron: "0 7 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - metrika
+    parameters:
+      track_changes: true
+      lookback_days: 60
+  - name: calltouch-loader-clickhouse
+    entrypoint: orchestration/flows/calltouch.py:calltouch_loader_flow
+    schedule:
+      cron: "0 8 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - calltouch
+    parameters:
+      tdelta: 10
+  - name: vk-loader-daily
+    entrypoint: orchestration/flows/vk.py:vk_loader_flow
+    schedule:
+      cron: "30 8 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - vk
+    parameters:
+      lookback_days: 10
