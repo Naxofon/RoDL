@@ -66,17 +66,6 @@ class Settings:
 
     LOG_CHECK_INTERVAL: int = 2100
 
-    WORDSTAT_BRANDS_PATH: str = (
-        os.getenv("WORDSTAT_BRANDS_PATH")
-        or os.getenv("WORDSTAT_BRANDS_CONFIG")
-        or "/wordstat/brands.yml"
-    )
     WORDSTAT_LOGIN: str = os.getenv("WORDSTAT_LOGIN", "default")
-
-    CUSTOM_LOADER_CONFIG_PATH: str = (
-        os.getenv("CUSTOM_LOADER_CONFIG_PATH")
-        or "/custom_loader/config.yaml"
-    )
-
 
 settings = Settings()

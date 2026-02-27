@@ -29,8 +29,16 @@ from .metrika import (
     write_metrika_range_task,
 )
 from .vk import run_vk_all, vk_loader_flow
-from .wordstat import wordstat_loader_flow
-from .custom_loader import custom_loader_flow
+
+try:
+    from .wordstat import wordstat_loader_flow
+except ImportError:
+    pass
+
+try:
+    from .custom_loader import custom_loader_flow
+except ImportError:
+    pass
 
 __all__ = [
     "calltouch_loader_flow",
@@ -55,6 +63,4 @@ __all__ = [
     "write_metrika_range_task",
     "run_vk_all",
     "vk_loader_flow",
-    "wordstat_loader_flow",
-    "custom_loader_flow",
 ]

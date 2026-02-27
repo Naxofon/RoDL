@@ -19,13 +19,21 @@ from prefect_loader.orchestration.clickhouse_utils import (
     AsyncMetrikaDatabase,
     AsyncCalltouchDatabase,
     AsyncVkDatabase,
-    AsyncWordstatDatabase,
-    AsyncCustomLoaderDatabase,
     ClickhouseDatabase,
     CLICKHOUSE_ACCESS_DATABASE,
     CLICKHOUSE_ACCESS_USER,
     CLICKHOUSE_ACCESS_PASSWORD,
 )
+
+try:
+    from prefect_loader.orchestration.clickhouse_utils import AsyncWordstatDatabase
+except ImportError:
+    AsyncWordstatDatabase = None
+
+try:
+    from prefect_loader.orchestration.clickhouse_utils import AsyncCustomLoaderDatabase
+except ImportError:
+    AsyncCustomLoaderDatabase = None
 
 
 router_admin_panel = Router()
@@ -1095,13 +1103,13 @@ async def execute_reset_database(callback_query: types.CallbackQuery):
             result = await db.reset_database()
             results["VK Ads"] = result["data_db"]
 
-        if service in ("wordstat", "all"):
+        if service in ("wordstat", "all") and AsyncWordstatDatabase is not None:
             db = AsyncWordstatDatabase()
             await db.init_db()
             result = await db.reset_database()
             results["Wordstat"] = result["data_db"]
 
-        if service in ("custom", "all"):
+        if service in ("custom", "all") and AsyncCustomLoaderDatabase is not None:
             db = AsyncCustomLoaderDatabase()
             await db.init_db()
             result = await db.reset_database()

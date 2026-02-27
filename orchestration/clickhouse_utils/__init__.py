@@ -38,8 +38,16 @@ from .direct import AsyncDirectDatabase
 from .metrika import AsyncMetrikaDatabase
 from .calltouch import AsyncCalltouchDatabase
 from .vk import AsyncVkDatabase
-from .wordstat import AsyncWordstatDatabase
-from .custom_loader import AsyncCustomLoaderDatabase
+
+try:
+    from .wordstat import AsyncWordstatDatabase
+except ImportError:
+    pass
+
+try:
+    from .custom_loader import AsyncCustomLoaderDatabase
+except ImportError:
+    pass
 
 __all__ = [
     "PROJECT_ROOT",
@@ -82,6 +90,4 @@ __all__ = [
     "AsyncMetrikaDatabase",
     "AsyncCalltouchDatabase",
     "AsyncVkDatabase",
-    "AsyncWordstatDatabase",
-    "AsyncCustomLoaderDatabase",
 ]
