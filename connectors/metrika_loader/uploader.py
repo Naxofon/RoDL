@@ -1,6 +1,5 @@
 import asyncio
 import ast
-import logging
 from datetime import datetime, timedelta
 from io import BytesIO
 
@@ -8,11 +7,11 @@ import aiohttp
 import numpy as np
 import pandas as pd
 import requests
+from prefect import get_run_logger
 
 from prefect_loader.orchestration.clickhouse_utils import AsyncMetrikaDatabase
 
-from .auth_logging import format_auth_fingerprint
-from .change_utils import AsyncRequestLimiter
+from .change_utils import AsyncRequestLimiter, format_auth_fingerprint
 
 class YaMetrikaUploader:
     """Yandex Metrika data uploader for fetching and loading analytics data."""
@@ -301,9 +300,7 @@ class YaMetrikaUploader:
             pd.DataFrame: Combined DataFrame containing data from both APIs.
         """
 
-        logger = logging.getLogger(__name__)
-        if not logger.handlers:
-            logging.basicConfig(level=logging.INFO)
+        logger = get_run_logger()
         logger.info(
             "%s: Metrika API upload fetch start for counter=%s, range=%s-%s (%s)",
             self.domain_name,
@@ -796,8 +793,8 @@ class YaMetrikaUploader:
         )
 
         if df.empty:
-            logging.warning(f"No data retrieved for counter {self.counter} from {self.start} to {self.end}")
-            return 
+            get_run_logger().warning(f"No data retrieved for counter {self.counter} from {self.start} to {self.end}")
+            return
 
         async_db = AsyncMetrikaDatabase()
         await async_db.init_db()
@@ -805,7 +802,7 @@ class YaMetrikaUploader:
         if not df.empty:
             await async_db.write_dataframe_to_table(df, self.domain_name)
         else:
-            logging.warning(f"Skipped writing empty DataFrame for counter {self.counter}")
+            get_run_logger().warning(f"Skipped writing empty DataFrame for counter {self.counter}")
 
     def split_date_range(self, start_date, end_date, chunk_size):
         start_date = datetime.strptime(start_date, "%Y-%m-%d")

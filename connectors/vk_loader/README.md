@@ -1,440 +1,162 @@
-# VK Ads Connector for Prefect Loader
+# vk_loader
 
-This connector enables automatic data loading from VK Ads into ClickHouse database using Prefect workflows.
+Коннектор загружает статистику рекламных кампаний из VK Ads в ClickHouse. Поддерживает агентские аккаунты с автодискавери активных клиентов. Запускается через Prefect по расписанию или вручную.
 
-## Features
+## Стек и зависимости
 
-- **Multi-account support**: Manages multiple VK advertising accounts (both agency and client accounts)
-- **Agency client auto-discovery**: Automatically fetches and tracks active clients from agency accounts
-- **ClickHouse integration**: Efficient data storage in ClickHouse database
-- **Prefect orchestration**: Reliable workflow management with retries and error handling
-- **Admin bot integration**: Easy management through Telegram bot interface
+- Python 3.10+
+- Библиотеки: `asyncio`, `aiohttp`, `pandas`, `prefect`
+- ClickHouse (через `clickhouse-connect`)
 
-## Architecture
+Зависимости описаны в `orchestration/requirements.txt`.
 
-The connector follows the modern architecture pattern used by other connectors in this project:
+## Структура файлов
 
 ```
 connectors/vk_loader/
-├── __init__.py
-├── config.py           # Configuration and constants
-├── api.py              # VK Ads API client
-├── access.py           # Access token management
-├── loader_service.py   # Main data upload logic
-└── README.md           # This file
-
-orchestration/clickhouse_utils/
-└── vk.py               # AsyncVkDatabase wrapper
-
-orchestration/flows/    # Prefect tasks and flows
-admin_bot/              # Telegram bot integration
+├── access.py           # Сбор агентских credentials из Accesses, фильтрация активных клиентов
+├── api.py              # VkApiClient — работа с VK Ads API
+├── config.py           # Константы, списки колонок, семафор запросов
+└── loader_service.py   # Основная логика загрузки данных
 ```
 
-## Setup
+## Поток данных
 
-### 1. Environment Variables
+```
+Prefect / Telegram Bot
+        │
+        ▼
+vk_loader_flow  (orchestration/flows/vk.py)
+        │
+        └── run_vk_all()
+                └── upload_data_for_all_agencies()
+                        ├── get_vk_agencies()              ← читает credentials из Accesses
+                        └── для каждого агентства:
+                                ├── get_agency_clients_with_activity()   ← список активных клиентов
+                                └── upload_vk_data_for_agency_client()   × N клиентов
+```
 
-Set the following environment variables:
+## Конфигурация клиентов
+
+Клиенты хранятся в `loader.Accesses` (ClickHouse):
+
+| Поле        | Значение                                  |
+|-------------|-------------------------------------------|
+| `service`   | `vk`                                      |
+| `login`     | `client_id` приложения VK Ads             |
+| `token`     | `client_secret` приложения VK Ads         |
+| `container` | Метка агентства (опционально)             |
+
+Каждая запись соответствует одному агентству. Клиенты агентства обнаруживаются автоматически через API.
+
+Управление — через Telegram-бот (раздел VK Ads) или напрямую через `AsyncVkDatabase`.
+
+## Переменные окружения
+
+Все переменные задаются в `.env` корня проекта (см. `.env.example`):
 
 ```bash
-# Required: VK API credentials
-export VK_CLIENT_ID="your_vk_client_id"
-export VK_CLIENT_SECRET="your_vk_client_secret"
+CLICKHOUSE_HOST=clickhouse
+CLICKHOUSE_PORT=8123
+CLICKHOUSE_USER=default_user
+CLICKHOUSE_PASSWORD=strong_password
 
-# Optional: Database configuration
-export CLICKHOUSE_HOST="clickhouse"
-export CLICKHOUSE_PORT="8123"
-export CLICKHOUSE_USER="default"
-export CLICKHOUSE_PASSWORD="your_password"
+CLICKHOUSE_ACCESS_USER=access_user
+CLICKHOUSE_ACCESS_PASSWORD=access_password
 ```
 
-### 2. Get VK API Credentials
+Имя базы данных (`loader_vk`) настраивается в `config/loaders.yaml`.
 
-1. Go to VK Ads API documentation: https://ads.vk.ru/api
-2. Create a new application or use an existing one
-3. Obtain your `client_id` and `client_secret`
+## Схема таблицы `vk_{user_id}`
 
-### 3. Database Setup
+Таблица создаётся автоматически. Основные поля:
 
-The connector automatically creates the required database and tables. The default database name is `loader_vk` but can be customized via configuration files.
+| Колонка          | Тип      | Описание                         |
+|------------------|----------|----------------------------------|
+| `date`           | DateTime | Дата статистики                  |
+| `campaign_name`  | String   | Название кампании                |
+| `campaign_id`    | String   | ID кампании                      |
+| `group_name`     | String   | Название группы объявлений       |
+| `group_id`       | String   | ID группы объявлений             |
+| `base_shows`     | Int64    | Показы                           |
+| `base_clicks`    | Int64    | Клики                            |
+| `base_spent`     | Float64  | Расходы                          |
+| `base_vk_goals`  | Int64    | Цели VK                          |
+| `events_*`       | Int64    | События (клики, лайки, шеры…)    |
+| `social_network_*` | Int64  | Соцсетевые метрики               |
+| `uniques_*`      | Int64/Float64 | Уникальные метрики и видео  |
+| `video_*`        | Int64/Float64 | Видеометрики                |
 
-## Usage
+Полный список колонок — в `VK_REQUIRED_COLUMNS` (`config.py`).
 
-### Via Prefect Tasks
+## Основные компоненты
 
-```python
-from prefect import flow
-from prefect_loader.orchestration.flows import run_vk_all, run_vk_single
+### `VkApiClient` (`api.py`)
 
-# Upload data for all users (last 10 days)
-@flow
-async def my_vk_flow():
-    await run_vk_all(lookback_days=10)
+| Метод | Описание |
+|-------|----------|
+| `get_access_token(agency_client_id?)` | Получает OAuth-токен (агентский или клиентский) |
+| `delete_access_token(user_id)` | Удаляет токен после использования |
+| `get_agency_clients(token)` | Возвращает список клиентов агентства |
+| `get_ad_plans_with_groups(token)` | Возвращает кампании с группами объявлений |
+| `get_ad_group_daily_statistics(token, plans, start, end)` | Статистика по группам за диапазон дат |
 
-# Upload data for a specific user
-@flow
-async def my_vk_single_flow():
-    await run_vk_single(
-        user_id="12345678",
-        start_date="2025-12-01",
-        end_date="2025-12-10"
-    )
-```
+Особенности:
+- Retry с экспоненциальным backoff (до 3 попыток)
+- 401/403 не ретраятся (токен невалиден)
+- Параллельные запросы ограничены семафором (по умолчанию 5)
 
-### Via Admin Bot
+### `access.py`
 
-1. Start the admin bot
-2. Navigate to: Main Menu → 🎯 VK Ads
-3. Available operations:
-   - **📋 Клиенты VK**: View all configured VK clients
-   - **➕ Агентский**: Add agency-level token
-   - **➕ Клиентский**: Add client-level token
-   - **⛔ Удалить клиента**: Remove a client
-   - **🏢 Удалить агентство**: Remove an agency
-   - **💾 Выгрузка**: Trigger data upload
+| Функция | Описание |
+|---------|----------|
+| `get_vk_agencies(db)` | Читает все агентские credentials из Accesses |
+| `get_agency_clients_with_activity(client_id, client_secret)` | Возвращает клиентов с ненулевыми показами за последние `lookback_days` дней |
 
-### Programmatic Usage
+### `loader_service.py`
 
-```python
-from connectors.vk_loader.loader_service import upload_data_for_all_users
-from connectors.vk_loader.access import get_vk_credentials
-from connectors.vk_loader.api import VkApiClient
-from orchestration.clickhouse_utils import AsyncVkDatabase
+| Функция | Описание |
+|---------|----------|
+| `upload_vk_data_for_agency_client(client_id, client_secret, user_id, start, end)` | Загружает данные одного клиента агентства |
+| `upload_data_for_all_agencies(start?, end?, lookback_days?)` | Загружает данные всех агентств и их активных клиентов |
+| `normalize_vk_dataframe(df)` | Приводит DataFrame к схеме (`VK_REQUIRED_COLUMNS`) |
 
-# Upload data for all users
-result = await upload_data_for_all_users(
-    start_date="2025-12-01",
-    end_date="2025-12-10",
-)
+## Деплоймент Prefect
 
-# Work with API client
-client_id, client_secret = get_vk_credentials()
-api_client = VkApiClient(client_id, client_secret)
-
-# Get agency clients
-token = await api_client.get_access_token()
-clients_df = await api_client.get_agency_clients(token)
-
-# Work with database
-db = AsyncVkDatabase()
-await db.init_db()
-
-# Add agency token
-await db.add_agency_token(
-    agency_user_id="12345678",
-    token="your_token",
-    container="my_agency"
-)
-
-# Get user tokens
-user_tokens = await db.get_user_id_token_dictionary()
-```
-
-## Data Schema
-
-The connector creates tables with the following structure:
-
-### Table Naming
-
-Tables are named `vk_{user_id}` where `user_id` is the VK user ID.
-
-### Columns
-
-- **date** (DateTime): Date of the statistics
-- **campaign_name** (String): Campaign name
-- **campaign_id** (String): Campaign ID
-- **group_name** (String): Ad group name
-- **group_id** (String): Ad group ID
-
-**Base Metrics:**
-- `base_shows` (Int64): Impressions count
-- `base_clicks` (Int64): Clicks count
-- `base_spent` (Float64): Amount spent
-- `base_vk_goals` (Int64): VK goals achieved
-
-**Event Metrics:**
-- `events_clicks_on_external_url` (Int64)
-- `events_comments` (Int64)
-- `events_joinings` (Int64)
-- `events_launching_video` (Int64)
-- `events_likes` (Int64)
-- `events_moving_into_group` (Int64)
-- `events_opening_app` (Int64)
-- `events_opening_post` (Int64)
-- `events_sending_form` (Int64)
-- `events_shares` (Int64)
-- `events_votings` (Int64)
-
-**Social Network Metrics:**
-- `social_network_ok_message` (Int64)
-- `social_network_result_join` (Int64)
-- `social_network_result_message` (Int64)
-- `social_network_vk_join` (Int64)
-- `social_network_vk_message` (Int64)
-- `social_network_vk_subscribe` (Int64)
-
-**Unique Metrics:**
-- `uniques_frequency` (Float64)
-- `uniques_increment` (Int64)
-- `uniques_total` (Int64)
-- `uniques_video_depth_of_view` (Float64)
-- `uniques_video_started` (Int64)
-- `uniques_video_viewed_25_percent` (Int64)
-- `uniques_video_viewed_10_seconds` (Int64)
-- `uniques_video_viewed_50_percent` (Int64)
-- `uniques_video_viewed_75_percent` (Int64)
-- `uniques_video_viewed_100_percent` (Int64)
-
-**Video Metrics:**
-- `video_depth_of_view` (Float64)
-- `video_first_second` (Int64)
-- `video_paused` (Int64)
-- `video_resumed_after_pause` (Int64)
-- `video_sound_turned_off` (Int64)
-- `video_sound_turned_on` (Int64)
-- `video_started` (Int64)
-- `video_started_cost` (Float64)
-- `video_viewed_10_seconds` (Int64)
-- `video_viewed_100_percent` (Int64)
-- `video_viewed_75_percent` (Int64)
-- `video_viewed_50_percent` (Int64)
-- `video_viewed_25_percent` (Int64)
-
-## Access Management
-
-The connector uses the centralized `Accesses` table in ClickHouse to manage API tokens.
-
-### Access Types
-
-Stored in the `type` column as "vk:{subtype}":
-
-- **vk:agency_token**: Agency-level token (can access all agency clients)
-- **vk:agency_parsed**: Client token parsed from agency (auto-discovered)
-- **vk:not_agency_token**: Direct client token (manually added)
-
-### Priority System
-
-When multiple tokens exist for the same user ID, priority is:
-1. **not_agency_token** (highest) - Direct client tokens
-2. **agency_parsed** - Agency-discovered clients
-3. **null/unknown** (lowest) - Legacy or unspecified
-
-## How It Works
-
-### Data Upload Flow
-
-1. **Token Collection**:
-   - Fetches all VK tokens from the Accesses table
-   - Refreshes agency clients if agency tokens exist
-   - Filters for active clients with recent activity
-
-2. **Data Fetching**:
-   - For each user:
-     - Fetches ad plans (campaigns) and ad groups
-     - Requests daily statistics via VK Ads API
-     - Flattens nested metric structures
-
-3. **Data Processing**:
-   - Normalizes DataFrame to match expected schema
-   - Converts data types (Int64, Float64, String)
-   - Fills missing columns with default values
-
-4. **Data Storage**:
-   - Deletes existing data in the date range
-   - Inserts new data into ClickHouse
-   - Creates table if doesn't exist
-
-### Agency Client Discovery
-
-1. Resets agency token
-2. Gets new agency token
-3. Fetches all agency clients
-4. Filters for active clients
-5. Checks each client for recent activity (impressions in last 10 days)
-6. Updates Accesses table with active clients
-
-## Configuration
-
-### config.py
-
-Key configuration constants:
-
-```python
-# API settings
-VK_API_BASE_URL = "https://ads.vk.ru/api/v2"
-VK_TIMEOUT_SECONDS = 120
-VK_MAX_RETRIES = 3
-
-# Default lookback days
-VK_DEFAULT_LOOKBACK_DAYS = 10
-
-# Access types
-VK_TYPE_AGENCY_TOKEN = "agency_token"
-VK_TYPE_AGENCY_PARSED = "agency_parsed"
-VK_TYPE_NOT_AGENCY = "not_agency_token"
-```
-
-### Database Configuration
-
-Database name can be customized in `config/loaders.yaml` under the `vk_loader` section:
+Определён в `orchestration/prefect.yaml`:
 
 ```yaml
-loaders:
-  vk_loader:
-    databases:
-      vk: "my_custom_vk_database"
+- name: vk-loader-daily
+  entrypoint: orchestration/flows/vk.py:vk_loader_flow
+  schedule:
+    cron: "30 8 * * *"
+    timezone: Asia/Novosibirsk
+  parameters:
+    lookback_days: 10
 ```
 
-Or via environment variable pointing to a custom `loaders.yaml`:
+Запускается ежедневно в 08:30 по Новосибирску. По умолчанию загружает данные за последние 10 дней для всех агентств.
 
-```bash
-export LOADER_CONFIG_PATH="/path/to/loaders.yaml"
-```
+### Параметры flow
 
-## Error Handling
+| Параметр       | Тип           | По умолчанию | Описание                                         |
+|----------------|---------------|--------------|--------------------------------------------------|
+| `start_date`   | `str \| None` | `None`       | Начало диапазона (YYYY-MM-DD)                    |
+| `end_date`     | `str \| None` | `None`       | Конец диапазона (YYYY-MM-DD, по умолчанию вчера) |
+| `lookback_days`| `int`         | `10`         | Глубина загрузки, если `start_date` не задан     |
 
-- **API errors**: Exponential backoff retry (max 3 attempts)
-- **Token errors**: Logged and skipped, processing continues
-- **Database errors**: Retried at task level by Prefect
-- **Missing data**: Empty DataFrames handled gracefully
+### Retry-логика задач
 
-## Logging
+| Задача      | Повторы | Задержка | Таймаут |
+|-------------|---------|----------|---------|
+| `run_vk_all` | 2      | 25 сек   | 4 ч     |
 
-Logs are available through:
-- Prefect logger (when running as Prefect task)
-- Module logger (when used standalone)
+## Запуск вручную
 
-Example log messages:
-```
-INFO: 12345678: Starting data upload (2025-12-01 → 2025-12-10)
-INFO: 12345678: Fetching ad plans and groups
-INFO: 12345678: Fetching statistics for 5 plans
-INFO: 12345678: Writing 250 rows to table vk_12345678
-INFO: 12345678: Upload completed successfully
-```
+**Через Prefect UI:**
+1. Откройте http://localhost:4200
+2. Deployments → `vk-loader-daily`
+3. Run → Quick run
 
-## Migration from Legacy Code
-
-If you were using an older PostgreSQL-based VK loader:
-
-### Migration Steps
-
-1. **Environment Variables**: Update to use new naming
-   - Old: `VK_DB_USER`, `VK_DB_PASSWORD`, `VK_DB_HOST`, `VK_DB_NAME`
-   - New: Use standard `CLICKHOUSE_*` variables + `VK_CLIENT_ID` and `VK_CLIENT_SECRET`
-
-2. **Database**: Migrate from PostgreSQL to ClickHouse
-   - Old data was in PostgreSQL tables named `vk_*`
-   - New data goes to ClickHouse database `loader_vk` with same table naming pattern
-   - No automatic data migration - re-pull historical data if needed
-
-3. **Scheduling**: Replace APScheduler with Prefect
-   - Old: Cron-based scheduling in `loader_pipe.py` (8:30 AM daily)
-   - New: Prefect flows with flexible scheduling via Prefect UI
-
-4. **Access Management**: Use centralized Accesses table
-   - Old: Hardcoded credentials in `.env` file
-   - New: Tokens managed via admin bot or programmatically through AsyncVkDatabase
-
-## Troubleshooting
-
-### No VK tokens found
-
-**Error**: "No VK tokens found in Accesses; nothing to upload."
-
-**Solution**: Add tokens via admin bot or programmatically:
-```python
-db = AsyncVkDatabase()
-await db.init_db()
-await db.add_agency_token("12345678", "your_token", "my_agency")
-```
-
-### VK credentials not configured
-
-**Error**: "VK_CLIENT_ID and VK_CLIENT_SECRET must be set"
-
-**Solution**: Set environment variables:
-```bash
-export VK_CLIENT_ID="your_id"
-export VK_CLIENT_SECRET="your_secret"
-```
-
-### API authentication errors
-
-**Error**: HTTP 401 or 403
-
-**Solutions**:
-- Verify VK_CLIENT_ID and VK_CLIENT_SECRET are correct
-- Check if API token has expired (tokens refresh automatically for agency)
-- Ensure API application has required permissions
-
-### No statistics data
-
-**Possible causes**:
-- No active campaigns in the date range
-- No ad groups configured
-- Client has no spending/activity
-
-**Debug**:
-```python
-# Check ad plans
-api_client = VkApiClient(client_id, client_secret)
-plans = await api_client.get_ad_plans(token)
-print(f"Found {len(plans)} ad plans")
-```
-
-## Performance
-
-- **Concurrent requests**: Limited by semaphore (default: 5)
-- **Batch size**: 100 ad groups per API request
-- **Retry logic**: Exponential backoff for transient errors
-- **Database writes**: Bulk inserts for efficiency
-
-## Security
-
-- **Tokens**: Stored encrypted in ClickHouse Accesses table
-- **API credentials**: Environment variables only (never hardcoded)
-- **Access control**: Managed via admin bot with user permissions
-
-## Development
-
-### Adding New Metrics
-
-1. Add column names to `VK_REQUIRED_COLUMNS` in `config.py`
-2. Add to appropriate type list (`VK_INT_COLUMNS`, `VK_FLOAT_COLUMNS`, etc.)
-3. Update this README's Data Schema section
-
-### Testing
-
-```python
-# Test API client
-api_client = VkApiClient(client_id, client_secret)
-token = await api_client.get_access_token()
-assert token
-
-# Test database
-db = AsyncVkDatabase()
-await db.init_db()
-exists = await db.table_exists("test_table")
-
-# Test data upload
-result = await upload_vk_data_for_user(
-    "12345678",
-    "token",
-    "2025-12-01",
-    "2025-12-10"
-)
-assert result["success"]
-```
-
-## Support
-
-For issues or questions:
-1. Check this README
-2. Review logs for error messages
-3. Check Prefect UI for task execution details
-4. Verify ClickHouse connectivity and permissions
-
-## License
-
-Same as the main project.
+**Через Telegram-бот:**
+1. Раздел VK Ads → "Выгрузка"

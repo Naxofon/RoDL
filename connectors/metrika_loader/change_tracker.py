@@ -7,13 +7,19 @@ import aiohttp
 import pandas as pd
 
 from prefect_loader.orchestration.clickhouse_utils import AsyncMetrikaDatabase
-from .auth_logging import format_auth_fingerprint
-from .change_utils import AsyncRequestLimiter, GoalMetadata, classify_goals, get_change_tracker_logger
+from prefect import get_run_logger
+from .change_utils import AsyncRequestLimiter, GoalMetadata, classify_goals, format_auth_fingerprint
 
 T = TypeVar("T")
 
 
-logger = get_change_tracker_logger()
+class _LazyLogger:
+    """Defer get_run_logger() until first use so module-level import succeeds outside Prefect."""
+    def __getattr__(self, name: str):
+        return getattr(get_run_logger(), name)
+
+
+logger = _LazyLogger()
 
 
 class MetrikaChangeTracker:

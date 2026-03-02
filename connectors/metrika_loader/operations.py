@@ -1,6 +1,5 @@
 import asyncio
 import gc
-import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -9,8 +8,9 @@ import pandas as pd
 from prefect_loader.orchestration.clickhouse_utils import AsyncMetrikaDatabase
 
 from .access import collect_metrika_access_data, counters_from_access
-from .auth_logging import format_auth_fingerprint
+from .change_utils import format_auth_fingerprint
 from .jobs import MetrikaReloadJob, plan_metrika_reload_jobs
+from prefect import get_run_logger as get_logger
 from .uploader import YaMetrikaUploader
 
 
@@ -43,12 +43,12 @@ async def emit_prefect_event(
             payload=payload or {},
         )
     except Exception:
-        logging.debug("Failed to emit Prefect event %s", event, exc_info=True)
+        get_logger().debug("Failed to emit Prefect event %s", event, exc_info=True)
 
 
 async def fetch_metrika_job_data(job: MetrikaReloadJob) -> pd.DataFrame:
     """Fetch raw Metrika data for a reload job and return it as a DataFrame."""
-    logging.info(
+    get_logger().info(
         "%s: starting API fetch for %s-%s (%s)",
         job.domain_name,
         job.start_date,
@@ -86,7 +86,7 @@ async def write_metrika_job_data(
     if df is None or df.empty:
         if fail_on_empty:
             raise ValueError(f"{job.domain_name}: empty dataset for {job.start_date}-{job.end_date}")
-        logging.warning("%s: empty dataset for %s-%s; nothing to write.", job.domain_name, job.start_date, job.end_date)
+        get_logger().warning("%s: empty dataset for %s-%s; nothing to write.", job.domain_name, job.start_date, job.end_date)
         return 0
 
     async_db = db or AsyncMetrikaDatabase()
@@ -125,7 +125,7 @@ async def refresh_data_with_change_tracker(
     ranges_by_counter: dict[int, list[tuple[str, str]]] = {}
 
     try:
-        logging.info(
+        get_logger().info(
             "Starting Metrika change tracker (lookback_days=%s, counter_id=%s)",
             lookback_days,
             counter_id,
@@ -137,7 +137,7 @@ async def refresh_data_with_change_tracker(
         )
 
         for diag in counter_diagnostics:
-            logging.info(
+            get_logger().info(
                 "Change tracker diag %s (counter=%s): API visits=%s (%s days with data), "
                 "DB visits=%s (empty=%s), changes_detected=%s",
                 diag.get("domain_name"),
@@ -150,7 +150,7 @@ async def refresh_data_with_change_tracker(
             )
 
         for failed in failed_counters:
-            logging.error(
+            get_logger().error(
                 "%s: change detection failed — %s",
                 failed.get("domain_name"),
                 failed.get("error"),
@@ -165,7 +165,7 @@ async def refresh_data_with_change_tracker(
             )
 
         for item in counters_without_changes:
-            logging.info("%s: no changes detected for the last %s days.", item["domain_name"], lookback_days)
+            get_logger().info("%s: no changes detected for the last %s days.", item["domain_name"], lookback_days)
             await emit_prefect_event(
                 "metrika.counter.no_changes",
                 counter_id=item["counter_id"],
@@ -173,7 +173,7 @@ async def refresh_data_with_change_tracker(
             )
 
         if not jobs:
-            logging.info("No metrika reload jobs to run.")
+            get_logger().info("No metrika reload jobs to run.")
             if failures:
                 raise RuntimeError("Some counters failed to reload: " + "; ".join(failures))
             return
@@ -188,7 +188,7 @@ async def refresh_data_with_change_tracker(
                 )
                 seen_started.add(job.counter_id)
 
-            logging.info("%s: fetching %s-%s (source=%s)", job.domain_name, job.start_date, job.end_date, job.source)
+            get_logger().info("%s: fetching %s-%s (source=%s)", job.domain_name, job.start_date, job.end_date, job.source)
             await emit_prefect_event(
                 "metrika.counter.reload_started",
                 counter_id=job.counter_id,
@@ -200,7 +200,7 @@ async def refresh_data_with_change_tracker(
             except Exception as exc:
                 msg = f"{job.domain_name}: reload failed for {job.start_date}-{job.end_date} — {exc}"
                 failures.append(msg)
-                logging.error(msg)
+                get_logger().error(msg)
                 await emit_prefect_event(
                     "metrika.counter.reload_failed",
                     counter_id=job.counter_id,
@@ -209,7 +209,7 @@ async def refresh_data_with_change_tracker(
                 continue
 
             ranges_by_counter.setdefault(job.counter_id, []).append((job.start_date, job.end_date))
-            logging.info("%s: wrote %d rows for %s-%s", job.domain_name, rows, job.start_date, job.end_date)
+            get_logger().info("%s: wrote %d rows for %s-%s", job.domain_name, rows, job.start_date, job.end_date)
             await emit_prefect_event(
                 "metrika.counter.reload_finished",
                 counter_id=job.counter_id,
@@ -228,7 +228,7 @@ async def refresh_data_with_change_tracker(
 
     finally:
         await async_db.close_engine()
-        logging.info(
+        get_logger().info(
             "Change tracker finished for %d counters",
             len({job.counter_id for job in jobs}) if jobs else 0,
         )
@@ -298,13 +298,13 @@ async def upload_data_for_all_counters(start, end):
     df_full_access = await collect_metrika_access_data(async_db, favorite_only=True)
     if df_full_access.empty:
         raise Exception("No metrika tokens found after filtering Accesses for upload")
-    logging.info(
+    get_logger().info(
         "Starting full upload for %d counters from %s to %s",
         len(df_full_access),
         start,
         end,
     )
-    logging.info("Upload sources: %s", df_full_access[["id", "source"]].head(20).to_dict("records"))
+    get_logger().info("Upload sources: %s", df_full_access[["id", "source"]].head(20).to_dict("records"))
     start_date = datetime.strptime(start, "%Y-%m-%d")
     end_date = datetime.strptime(end, "%Y-%m-%d")
 
@@ -336,13 +336,13 @@ async def upload_data_for_single_counter(counter_id, start, end):
         raise Exception(f"Counter {counter_id} not found in Accesses")
     token = counter_row.iloc[0]['token']
     fact_login = counter_row.iloc[0].get('fact_login')
-    logging.info(
+    get_logger().info(
         "Starting upload for counter %s from %s to %s",
         counter_id,
         start,
         end,
     )
-    logging.info("Upload source: %s", counter_row[["id", "source"]].to_dict())
+    get_logger().info("Upload source: %s", counter_row[["id", "source"]].to_dict())
 
     start_date = datetime.strptime(start, "%Y-%m-%d")
     end_date = datetime.strptime(end, "%Y-%m-%d")
@@ -395,16 +395,16 @@ async def continue_upload_data_for_counters(counter_id, start, end):
     try:
         counter_index = df_full_access[df_full_access['id'] == counter_id].index[0]
     except IndexError:
-        logging.error(f"Counter ID {counter_id} not found in the list of counters.")
+        get_logger().error(f"Counter ID {counter_id} not found in the list of counters.")
         return
-    logging.info(
+    get_logger().info(
         "Continuing upload for counters starting from ID %s (%d counters), range %s-%s",
         counter_id,
         len(df_full_access),
         start,
         end,
     )
-    logging.info("Continue upload sources: %s", df_full_access[["id", "source"]].head(20).to_dict("records"))
+    get_logger().info("Continue upload sources: %s", df_full_access[["id", "source"]].head(20).to_dict("records"))
 
     df_full_access = df_full_access.iloc[counter_index:]
 

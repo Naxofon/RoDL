@@ -1,6 +1,5 @@
 import asyncio
 import ast
-import logging
 
 from datetime import datetime, timedelta, time
 from typing import Optional
@@ -9,6 +8,7 @@ import aiohttp
 import pandas as pd
 import numpy as np
 
+from prefect import get_run_logger
 from prefect_loader.orchestration.clickhouse_utils import (
     CLICKHOUSE_ACCESS_DATABASE,
     CLICKHOUSE_ACCESS_PASSWORD,
@@ -18,22 +18,6 @@ from prefect_loader.orchestration.clickhouse_utils import (
     CLICKHOUSE_USER,
     ClickhouseDatabase,
 )
-
-current_dir = __import__('os').path.dirname(__import__('os').path.abspath(__file__))
-file_logger = logging.getLogger("calltouch_loader")
-file_handler = logging.FileHandler(__import__('os').path.join(current_dir, "calltouch_loader.log"))
-file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-file_logger.addHandler(file_handler)
-file_logger.setLevel(logging.INFO)
-
-def get_logger():
-    """Get Prefect logger if available, otherwise use file logger."""
-    try:
-        from prefect import get_run_logger
-        from prefect.context import MissingContextError
-        return get_run_logger()
-    except (ImportError, MissingContextError, RuntimeError):
-        return file_logger
 
 pd.set_option('future.no_silent_downcasting', True)
 
@@ -245,7 +229,7 @@ async def process_data(site_id: int, api_token: str, tdelta: int = 10, db: Optio
         tdelta: Number of days to look back from yesterday
         db: ClickhouseDatabase instance (if None, creates one)
     """
-    logger = get_logger()
+    logger = get_run_logger()
 
     today = datetime.today().date()
     date_to_day = today - timedelta(days=1)
@@ -333,7 +317,8 @@ async def process_data(site_id: int, api_token: str, tdelta: int = 10, db: Optio
         ]
         df_lead = pd.DataFrame(columns=expected_lead_columns)
 
-    combined_df = pd.concat([df_lead, df_calls], ignore_index=True)
+    _frames = [df for df in [df_lead, df_calls] if not df.empty]
+    combined_df = pd.concat(_frames, ignore_index=True) if _frames else pd.DataFrame()
 
     required_columns = [
         'date', 'comments', 'tags', 'manager', 'attribution',
@@ -426,7 +411,7 @@ async def process_single_client(site_id: int, tdelta: int = 10, api_token: Optio
         api_token: Optional API token (if None, fetches from Accesses)
     """
 
-    logger = get_logger()
+    logger = get_run_logger()
 
     if api_token is None:
         access_db = ClickhouseDatabase(database=CLICKHOUSE_ACCESS_DATABASE, user=CLICKHOUSE_ACCESS_USER, password=CLICKHOUSE_ACCESS_PASSWORD)
@@ -451,7 +436,7 @@ async def process_single_client(site_id: int, tdelta: int = 10, api_token: Optio
 
 async def process_all_clients(tdelta: int = 10):
     """Process all Calltouch clients configured in the Accesses table."""
-    logger = get_logger()
+    logger = get_run_logger()
 
     access_db = ClickhouseDatabase(database=CLICKHOUSE_ACCESS_DATABASE, user=CLICKHOUSE_ACCESS_USER, password=CLICKHOUSE_ACCESS_PASSWORD)
 

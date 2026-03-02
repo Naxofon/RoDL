@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import logging
 from typing import Any, Optional
 
 from prefect_loader.orchestration.clickhouse_utils import AsyncMetrikaDatabase
 
 from .access import collect_metrika_access_data
-from .auth_logging import format_auth_fingerprint, mask_token
+from .change_utils import format_auth_fingerprint, mask_token
 from .change_tracker import MetrikaChangeTracker
+from prefect import get_run_logger as get_logger
 
 
 @dataclass(frozen=True)
@@ -84,13 +84,13 @@ async def plan_metrika_reload_jobs(
             force_include_ids=force_ids,
         )
         if df_full_access.empty:
-            logging.warning("No metrika tokens found after filtering Accesses; nothing to reload.")
+            get_logger().warning("No metrika tokens found after filtering Accesses; nothing to reload.")
             return jobs, counters_without_changes, failed_counters, counter_diagnostics
 
         if counter_id is not None:
             df_full_access = df_full_access[df_full_access["id"] == counter_id]
             if df_full_access.empty:
-                logging.warning("Counter %s not found among favourites; nothing to process.", counter_id)
+                get_logger().warning("Counter %s not found among favourites; nothing to process.", counter_id)
                 return jobs, counters_without_changes, failed_counters, counter_diagnostics
 
         for _, row in df_full_access.iterrows():
@@ -100,7 +100,7 @@ async def plan_metrika_reload_jobs(
             source = row.get("source", "unknown")
             fact_login = row.get("fact_login")
 
-            logging.info(
+            get_logger().info(
                 "%s: start detect_changes using source=%s, %s",
                 domain_name,
                 source,
@@ -127,7 +127,7 @@ async def plan_metrika_reload_jobs(
                 changes_info = await tracker.detect_changes(domain_name)
             except Exception as exc:
                 error_text = str(exc)
-                logging.error("%s: change detection failed — %s", domain_name, error_text)
+                get_logger().error("%s: change detection failed — %s", domain_name, error_text)
                 failed_counters.append(
                     {
                         "counter_id": counter,
@@ -150,7 +150,7 @@ async def plan_metrika_reload_jobs(
                 "changes_detected": changes_info.get("changes_detected", False),
             }
             counter_diagnostics.append(diag)
-            logging.info(
+            get_logger().info(
                 "%s (counter=%s, %s): API visits=%s (%s days with data), "
                 "DB visits=%s (empty=%s), changes_detected=%s",
                 domain_name, counter, format_auth_fingerprint(fact_login, token),
@@ -171,7 +171,7 @@ async def plan_metrika_reload_jobs(
                     datetime.strptime(start_str, "%Y-%m-%d")
                     datetime.strptime(end_str, "%Y-%m-%d")
                 except ValueError:
-                    logging.warning("%s: invalid date range %s-%s, skipping.", domain_name, start_str, end_str)
+                    get_logger().warning("%s: invalid date range %s-%s, skipping.", domain_name, start_str, end_str)
                     continue
                 jobs.append(
                     MetrikaReloadJob(
@@ -185,7 +185,7 @@ async def plan_metrika_reload_jobs(
                     )
                 )
 
-        logging.info(
+        get_logger().info(
             "Change tracker planned %d reload jobs; counters without changes: %s",
             len(jobs),
             [item["counter_id"] for item in counters_without_changes],
@@ -203,7 +203,7 @@ def _collapse_date_ranges(dates: list[str]) -> list[tuple[str, str]]:
         try:
             valid_dates.append(datetime.strptime(raw_date, "%Y-%m-%d"))
         except ValueError:
-            logging.warning(f"Skipping invalid date while collapsing ranges: {raw_date}")
+            get_logger().warning(f"Skipping invalid date while collapsing ranges: {raw_date}")
 
     if not valid_dates:
         return []

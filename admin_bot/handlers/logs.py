@@ -41,10 +41,10 @@ async def _fetch_failed_flow_runs(since_dt: datetime, limit: int = 50) -> list[d
     query = {
         "flow_runs": {
             "state": {"type": {"any_": list(_ERROR_STATES)}},
-            "start_time": {"after_": iso_since},
+            "end_time": {"after_": iso_since},
         },
         "limit": limit,
-        "sort": "START_TIME_DESC",
+        "sort": "END_TIME_DESC",
     }
 
     async with httpx.AsyncClient(timeout=20) as client:

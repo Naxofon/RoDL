@@ -1,11 +1,12 @@
 import asyncio
-import logging
 from typing import Any, Optional
 
 import aiohttp
 import pandas as pd
 
 from prefect_loader.orchestration.clickhouse_utils import AsyncMetrikaDatabase
+
+from prefect import get_run_logger as get_logger
 
 METRIKA_AGENCY_SUBTYPES = {"agency", "agency_token"}
 METRIKA_COUNTER_PAGE_LIMIT = 200
@@ -42,7 +43,7 @@ async def _fetch_favorite_counters(
                 params["offset"] = offset
                 async with session.get(url, headers=headers, params=params) as resp:
                     if resp.status != 200:
-                        logging.error(
+                        get_logger().error(
                             "%s: failed to list Metrika counters (HTTP %s): %s",
                             label,
                             resp.status,
@@ -52,7 +53,7 @@ async def _fetch_favorite_counters(
                     payload = await resp.json()
                     chunk = payload.get("counters") or []
                     if not isinstance(chunk, list):
-                        logging.error("%s: unexpected counters payload shape", label)
+                        get_logger().error("%s: unexpected counters payload shape", label)
                         break
                     counters.extend(
                         {
@@ -66,7 +67,7 @@ async def _fetch_favorite_counters(
                         break
                     offset += METRIKA_COUNTER_PAGE_LIMIT
     except Exception as exc:
-        logging.error("%s: error while listing counters — %s", label, exc)
+        get_logger().error("%s: error while listing counters — %s", label, exc)
     return [c for c in counters if c.get("id") is not None]
 
 
@@ -90,10 +91,10 @@ async def collect_metrika_access_data(
             include_null_type=True,
         )
     except Exception as exc:
-        logging.error("Failed to fetch metrika Accesses rows: %s", exc)
+        get_logger().error("Failed to fetch metrika Accesses rows: %s", exc)
         access_rows = []
 
-    logging.info("Metrika Accesses rows fetched: %d", len(access_rows))
+    get_logger().info("Metrika Accesses rows fetched: %d", len(access_rows))
 
     explicit_tokens: dict[int, dict] = {}
     agency_rows: list[dict] = []
@@ -121,7 +122,7 @@ async def collect_metrika_access_data(
             agency_rows.append(row)
 
     agency_rows = [r for r in agency_rows if r.get("token")]
-    logging.info(
+    get_logger().info(
         "Metrika Accesses: %d explicit counter tokens, %d agency tokens",
         len(explicit_tokens),
         len(agency_rows),
@@ -141,12 +142,12 @@ async def collect_metrika_access_data(
     favorite_ids: set[int] = set()
     for res in agency_results:
         if isinstance(res, Exception):
-            logging.error("Agency counters fetch failed: %s", res)
+            get_logger().error("Agency counters fetch failed: %s", res)
             continue
         label, _agency_token, counters = res
         ids = [c.get("id") for c in counters if c.get("id") is not None]
         favorite_ids.update(ids)
-        logging.info("%s: favorites discovered: %s%s", label, ids[:20], " …" if len(ids) > 20 else "")
+        get_logger().info("%s: favorites discovered: %s%s", label, ids[:20], " …" if len(ids) > 20 else "")
 
     if force_include_ids:
         favorite_ids.update(force_include_ids)
@@ -165,7 +166,7 @@ async def collect_metrika_access_data(
             }
         skipped = sorted(set(explicit_tokens.keys()) - favorite_ids)
         if skipped:
-            logging.info(
+            get_logger().info(
                 "Skipping %d explicit counters not in favorites: %s%s",
                 len(skipped),
                 skipped[:20],
@@ -182,7 +183,7 @@ async def collect_metrika_access_data(
             }
 
     if records:
-        logging.info(
+        get_logger().info(
             "Metrika Accesses ready: %d counters after applying favorites (agency tokens checked: %d)",
             len(records),
             len(agency_rows),
@@ -201,9 +202,9 @@ async def collect_metrika_access_data(
                 legacy_df["source"] = "legacy_config"
                 return legacy_df[["id", "name", "token", "fact_login", "source"]]
     except Exception as exc:
-        logging.error("Failed to read legacy metrika_config: %s", exc)
+        get_logger().error("Failed to read legacy metrika_config: %s", exc)
 
-    logging.warning("No metrika Accesses or legacy config found.")
+    get_logger().warning("No metrika Accesses or legacy config found.")
     return pd.DataFrame(columns=["id", "name", "token", "fact_login", "source"])
 
 

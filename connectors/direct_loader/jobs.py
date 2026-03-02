@@ -1,7 +1,6 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import logging
 from typing import Any, Optional
 
 from prefect_loader.orchestration.clickhouse_utils import AsyncDirectDatabase
@@ -9,6 +8,7 @@ from prefect_loader.orchestration.clickhouse_utils import AsyncDirectDatabase
 from .access import collect_direct_login_tokens
 from .change_tracker import DirectChangeTracker
 from .config import DATABASE_PROFILES, DEFAULT_DB_PROFILE
+from .logging_utils import get_logger
 from .shared_utils import convert_days_to_date_ranges
 
 
@@ -86,13 +86,13 @@ async def plan_direct_reload_jobs(
     try:
         login_tokens = await collect_direct_login_tokens(access_db, profile=profile)
         if not login_tokens:
-            logging.warning("No Direct tokens found in Accesses; nothing to reload.")
+            get_logger().warning("No Direct tokens found in Accesses; nothing to reload.")
             return jobs, clients_without_changes, failed_clients
 
         if login is not None:
             normalized_login = AsyncDirectDatabase._normalize_login(login)
             if normalized_login not in login_tokens:
-                logging.warning("Login %s not found in access list; nothing to process.", login)
+                get_logger().warning("Login %s not found in access list; nothing to process.", login)
                 return jobs, clients_without_changes, failed_clients
             login_tokens = {normalized_login: login_tokens[normalized_login]}
 
@@ -108,7 +108,7 @@ async def plan_direct_reload_jobs(
             async with change_detection_sem:
                 source = "direct_api"
 
-                logging.info("%s: start detect_changes using profile=%s", client_login, profile)
+                get_logger().info("%s: start detect_changes using profile=%s", client_login, profile)
                 effective_lookback = lookback_days
                 if start_date:
                     try:
@@ -137,7 +137,7 @@ async def plan_direct_reload_jobs(
                         changes_info = await tracker.detect_changes(client_login)
                     except Exception as exc:
                         error_text = str(exc)
-                        logging.error("%s: change detection failed — %s", client_login, error_text)
+                        get_logger().error("%s: change detection failed — %s", client_login, error_text)
                         return {
                             "type": "failed",
                             "login": client_login,
@@ -162,7 +162,7 @@ async def plan_direct_reload_jobs(
                             datetime.strptime(start_str, "%Y-%m-%d")
                             datetime.strptime(end_str, "%Y-%m-%d")
                         except ValueError:
-                            logging.warning("%s: invalid date range %s-%s, skipping.", client_login, start_str, end_str)
+                            get_logger().warning("%s: invalid date range %s-%s, skipping.", client_login, start_str, end_str)
                             continue
                         client_jobs.append(
                             DirectReloadJob(
@@ -182,7 +182,7 @@ async def plan_direct_reload_jobs(
                 finally:
                     await client_db.close_engine()
 
-        logging.info(
+        get_logger().info(
             "Starting parallel change detection for %d clients (max %d concurrent)",
             len(login_tokens),
             MAX_CONCURRENT_LOGINS,
@@ -211,7 +211,7 @@ async def plan_direct_reload_jobs(
             elif result["type"] == "jobs":
                 jobs.extend(result["jobs"])
 
-        logging.info(
+        get_logger().info(
             "Change tracker planned %d reload jobs; clients without changes: %s",
             len(jobs),
             [item["login"] for item in clients_without_changes],

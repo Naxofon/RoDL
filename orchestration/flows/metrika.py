@@ -16,7 +16,7 @@ from prefect_loader.connectors.metrika_loader import (
     upload_data_for_all_counters,
     write_metrika_job_data,
 )
-from prefect_loader.connectors.metrika_loader.auth_logging import format_auth_fingerprint
+from prefect_loader.connectors.metrika_loader.change_utils import format_auth_fingerprint
 
 MAX_PARALLEL_FETCH = 9
 

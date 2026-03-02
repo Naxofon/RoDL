@@ -1,7 +1,6 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*$py.class
 .cache/
 .pytest_cache/
 .mypy_cache/
@@ -58,15 +57,8 @@ Desktop.ini
 *.csv
 *.xlsx
 *.xls
-*.json
-*.parquet
-*.h5
-*.hdf5
 *.pkl
 *.pickle
-data/
-datasets/
-backups/
 logs/
 
 # Docker

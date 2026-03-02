@@ -1,26 +1,33 @@
 import asyncio
-import logging
 from dataclasses import dataclass
-from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
-LOG_PATH = Path(__file__).with_name("change_tracker.log")
+from prefect import get_run_logger
 
 
-def get_change_tracker_logger() -> logging.Logger:
-    logger = logging.getLogger("metrika.change_tracker")
-    if logger.handlers:
-        return logger
+def mask_token(token: Optional[str], *, head: int = 4, tail: int = 4) -> str:
+    """Return a safe token fingerprint for logs (prefix/suffix only)."""
+    if not token:
+        return "<empty>"
 
-    handler = logging.FileHandler(LOG_PATH)
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
+    token = str(token).strip()
+    if not token:
+        return "<empty>"
 
-    logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
-    logger.propagate = False
-    return logger
+    if len(token) <= head + tail:
+        return f"{token[:1]}***{token[-1:]}" if len(token) > 2 else "***"
+
+    return f"{token[:head]}...{token[-tail:]}"
+
+
+def format_auth_fingerprint(login: Optional[str], token: Optional[str]) -> str:
+    """Format login + masked token for safe logging."""
+    login_str = str(login).strip() if login is not None else ""
+    if not login_str:
+        login_str = "unknown"
+    return f"login={login_str}, token={mask_token(token)}"
 
 
 class AsyncRequestLimiter:
@@ -65,12 +72,12 @@ def classify_goals(goals: list[dict]) -> list[GoalMetadata]:
     try:
         goals_df = pd.json_normalize(goals)
     except Exception as exc:
-        logging.getLogger("metrika.change_tracker").error("Failed to normalise goals payload: %s", exc)
+        get_run_logger().error("Failed to normalise goals payload: %s", exc)
         return []
 
     required_cols = {"id", "name"}
     if not required_cols.issubset(goals_df.columns):
-        logging.getLogger("metrika.change_tracker").warning(
+        get_run_logger().warning(
             "Goals payload missing required columns %s. Available: %s",
             required_cols,
             list(goals_df.columns),
@@ -101,8 +108,9 @@ def classify_goals(goals: list[dict]) -> list[GoalMetadata]:
 
 
 __all__ = [
+    "mask_token",
+    "format_auth_fingerprint",
     "AsyncRequestLimiter",
     "GoalMetadata",
     "classify_goals",
-    "get_change_tracker_logger",
 ]
