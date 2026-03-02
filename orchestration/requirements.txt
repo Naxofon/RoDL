@@ -1,0 +1,9 @@
+prefect==3.4.22
+pandas>=1.5,<3.0
+requests>=2.31
+PyYAML>=6.0
+python-dotenv>=1.0
+clickhouse-connect>=0.7
+aiohttp>=3.9
+aiolimiter>=1.1
+numpy>=1.26

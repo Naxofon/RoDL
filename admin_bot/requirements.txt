@@ -1,0 +1,10 @@
+aiogram>=3.2
+apscheduler>=3.10
+pandas>=1.5
+openpyxl>=3.0
+aiohttp>=3.9
+clickhouse-connect>=0.7
+PyYAML>=6.0
+python-dotenv>=1.0
+requests>=2.31
+prefect==3.4.22

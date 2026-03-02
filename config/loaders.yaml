@@ -1,0 +1,26 @@
+databases:
+  default: loader
+  access: loader
+
+loaders:
+  direct_loader:
+    enabled: true
+    display_name: "💰 Яндекс.Директ"
+    databases:
+      direct_analytics: loader_direct_analytics
+      direct_light: loader_direct_light
+  metrika_loader:
+    enabled: true
+    display_name: "📊 Яндекс.Метрика"
+    databases:
+      metrika: loader_metrika
+  calltouch_loader:
+    enabled: true
+    display_name: "📞 Calltouch"
+    databases:
+      calltouch: loader_calltouch
+  vk_loader:
+    enabled: true
+    display_name: "🎯 VK Ads"
+    databases:
+      vk: loader_vk
