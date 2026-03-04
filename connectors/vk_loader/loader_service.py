@@ -1,4 +1,7 @@
 import logging
+import ast
+import json
+from collections.abc import MutableMapping
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -16,6 +19,15 @@ from .config import (
     VK_REQUIRED_COLUMNS,
     VK_STRING_COLUMNS,
 )
+
+VK_METRIC_ALIASES: dict[str, tuple[str, ...]] = {
+    "base_vk_goals": (
+        "base_vk_goals",
+        "base_goals",
+        "base_goal",
+        "base_conversions",
+    ),
+}
 
 
 def get_logger():
@@ -41,6 +53,36 @@ def flatten_stats_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
 
+    def parse_mapping(value: Any) -> MutableMapping[str, Any] | None:
+        if isinstance(value, MutableMapping):
+            return value
+        if not isinstance(value, str):
+            return None
+
+        for parser in (ast.literal_eval, json.loads):
+            try:
+                parsed = parser(value)
+            except (ValueError, SyntaxError, TypeError, MemoryError, json.JSONDecodeError):
+                continue
+            if isinstance(parsed, MutableMapping):
+                return parsed
+        return None
+
+    def flatten_mapping(
+        mapping: MutableMapping[str, Any],
+        parent_key: str,
+        sep: str = "_",
+    ) -> dict[str, Any]:
+        items: dict[str, Any] = {}
+        for k, v in mapping.items():
+            key = f"{parent_key}{sep}{k}" if parent_key else str(k)
+            nested = parse_mapping(v)
+            if nested:
+                items.update(flatten_mapping(nested, key, sep=sep))
+            else:
+                items[key] = v
+        return items
+
     processed_rows = []
     non_nested_cols = ["campaign_name", "campaign_id", "group_name", "group_id", "date"]
 
@@ -58,16 +100,29 @@ def flatten_stats_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             if col_name in row and pd.notna(row[col_name]):
                 cell_value = row[col_name]
 
-                if isinstance(cell_value, dict):
-                    for k, v in cell_value.items():
-                        flat_col_name = f"{col_name}_{k}"
-                        flat_row[flat_col_name] = v
+                parsed_mapping = parse_mapping(cell_value)
+                if parsed_mapping:
+                    flat_row.update(flatten_mapping(parsed_mapping, col_name))
                 else:
                     flat_row[col_name] = cell_value
 
         processed_rows.append(flat_row)
 
     return pd.DataFrame(processed_rows)
+
+
+def apply_metric_aliases(df: pd.DataFrame) -> pd.DataFrame:
+    """Populate canonical metric columns from known API aliases."""
+    out = df.copy()
+    for target_col, source_cols in VK_METRIC_ALIASES.items():
+        available = [col for col in source_cols if col in out.columns]
+        if not available:
+            continue
+        merged = out[available[0]]
+        for col in available[1:]:
+            merged = merged.combine_first(out[col])
+        out[target_col] = merged
+    return out
 
 
 def normalize_vk_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -84,6 +139,7 @@ def normalize_vk_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=VK_REQUIRED_COLUMNS)
 
     df = flatten_stats_dataframe(df)
+    df = apply_metric_aliases(df)
 
     df = df.reindex(columns=VK_REQUIRED_COLUMNS, fill_value=0)
 
@@ -95,11 +151,11 @@ def normalize_vk_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in VK_INT_COLUMNS:
         if col in df.columns:
-            df[col] = df[col].astype(pd.Int64Dtype())
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(pd.Int64Dtype())
 
     for col in VK_FLOAT_COLUMNS:
         if col in df.columns:
-            df[col] = df[col].astype(pd.Float64Dtype())
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(pd.Float64Dtype())
 
     for col in VK_STRING_COLUMNS:
         if col in df.columns:
