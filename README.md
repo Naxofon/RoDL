@@ -52,8 +52,6 @@
 | `metrika_loader` | Логи визитов Яндекс.Метрики (Logs API + Reporting API), change tracking по дням | [README](connectors/metrika_loader/README.md) |
 | `calltouch_loader` | Звонки и заявки Calltouch (Calls Diary API + Requests API) | [README](connectors/calltouch_loader/README.md) |
 | `vk_loader` | Статистика рекламных кампаний VK Ads, агентские аккаунты | [README](connectors/vk_loader/README.md) |
-| `wordstat_loader` | Динамика Яндекс.Wordstat по брендам, фразам и регионам | [README](connectors/wordstat_loader/README.md) |
-| `custom_loader` | Кастомная агрегация Direct с фильтрацией по целям Метрики | [README](connectors/custom_loader/README.md) |
 
 ### Prefect (`orchestration/`)
 
@@ -155,16 +153,6 @@ loaders:
     display_name: "🎯 VK Ads"
     databases:
       vk: loader_vk
-  wordstat_loader:
-    enabled: true
-    display_name: "📈 Wordstat"
-    databases:
-      wordstat: loader_wordstat
-  custom_loader:
-    enabled: true
-    display_name: "🧩 Custom AAM"
-    databases:
-      custom_loader: loader_custom
 ```
 
 Чтобы отключить загрузчик — `enabled: false`. Имена БД настраиваются в `databases`.
