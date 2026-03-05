@@ -316,7 +316,14 @@ async def upload_data_for_all_agencies(
         total_clients = 0
 
         for agency_id, agency_info in agencies.items():
-            client_id = agency_info["client_id"]
+            client_id = str(agency_id)
+            payload_client_id = str(agency_info.get("client_id") or "").strip()
+            if payload_client_id and payload_client_id != client_id:
+                logger.warning(
+                    "Agency key/client_id mismatch: key=%s payload=%s. Using key value.",
+                    client_id,
+                    payload_client_id,
+                )
             client_secret = agency_info["client_secret"]
             container = agency_info.get("container") or client_id
 

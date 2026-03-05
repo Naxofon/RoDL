@@ -4,18 +4,22 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+VALIDATE_LOADERS_QUIET="${VALIDATE_LOADERS_QUIET:-0}"
 
-echo "════════════════════════════════════════════════════════════"
-echo "🔍 Validating Loader Configuration"
-echo "════════════════════════════════════════════════════════════"
+if [[ "${VALIDATE_LOADERS_QUIET}" != "1" ]]; then
+  echo "════════════════════════════════════════════════════════════"
+  echo "🔍 Validating Loader Configuration"
+  echo "════════════════════════════════════════════════════════════"
+fi
 
-VALIDATE_PROJECT_ROOT="${PROJECT_ROOT}" python3 - <<'PYVALIDATE'
+VALIDATE_PROJECT_ROOT="${PROJECT_ROOT}" VALIDATE_LOADERS_QUIET="${VALIDATE_LOADERS_QUIET}" python3 - <<'PYVALIDATE'
 import sys
 import os
 from pathlib import Path
 
 # Use project root passed from the calling script
 project_root = os.environ.get("VALIDATE_PROJECT_ROOT", os.getcwd())
+quiet_mode = os.environ.get("VALIDATE_LOADERS_QUIET", "0") == "1"
 sys.path.insert(0, project_root)
 
 try:
@@ -29,7 +33,10 @@ try:
     all_loaders = sorted(config.get("loaders", {}).keys())
     enabled_loaders = [n for n in all_loaders if is_loader_enabled(n)]
 
-    print(f"\n✓ Loader configuration loaded successfully")
+    if quiet_mode:
+        sys.exit(0)
+
+    print("\n✓ Loader configuration loaded successfully")
     print(f"\n📦 Enabled loaders ({len(enabled_loaders)}):")
 
     for loader_name in all_loaders:
@@ -53,5 +60,7 @@ except Exception as e:
 
 PYVALIDATE
 
-echo "════════════════════════════════════════════════════════════"
-echo ""
+if [[ "${VALIDATE_LOADERS_QUIET}" != "1" ]]; then
+  echo "════════════════════════════════════════════════════════════"
+  echo ""
+fi

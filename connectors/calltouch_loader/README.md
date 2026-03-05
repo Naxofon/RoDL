@@ -14,7 +14,16 @@
 
 ```
 connectors/calltouch_loader/
-└── loader_service.py      # Основной модуль: загрузка, нормализация, запись в ClickHouse
+├── loader_service.py            # Основной модуль: загрузка, нормализация, запись в ClickHouse
+├── prefect/
+│   ├── flows.py                 # Prefect flow для запуска коннектора
+│   ├── clickhouse_utils.py      # AsyncCalltouchDatabase
+│   └── prefect.yaml             # Deployment и расписание
+└── bot/
+    ├── handlers.py              # Пользовательские команды Calltouch в боте
+    ├── keyboards.py             # Клавиатуры раздела Calltouch
+    ├── plugin.py                # Регистрация router/keyboard/admin-кнопки
+    └── admin/handlers.py        # Админ-массовая выгрузка Calltouch
 ```
 
 ## Как устроен поток данных
@@ -23,7 +32,7 @@ connectors/calltouch_loader/
 Prefect Schedule / Bot
         │
         ▼
-calltouch_loader_flow  (orchestration/flows/calltouch.py)
+calltouch_loader_flow  (connectors/calltouch_loader/prefect/flows.py)
         │
         ├── site_id задан → process_single_client(site_id, tdelta)
         └── site_id не задан → process_all_clients(tdelta)
@@ -52,7 +61,7 @@ calltouch_loader_flow  (orchestration/flows/calltouch.py)
 | `container` | Название аккаунта (опционально)               |
 | `type`      | `NULL` (не используется для calltouch)        |
 
-Добавление/удаление клиентов — через Telegram-бот (раздел Calltouch) или напрямую через `AsyncCalltouchDatabase` из `orchestration/clickhouse_utils/calltouch.py`.
+Добавление/удаление клиентов — через Telegram-бот (раздел Calltouch) или напрямую через `AsyncCalltouchDatabase` из `connectors/calltouch_loader/prefect/clickhouse_utils.py`.
 
 ## Переменные окружения
 
@@ -128,11 +137,11 @@ calltouch_loader_flow  (orchestration/flows/calltouch.py)
 
 ## Деплоймент Prefect
 
-Определён в `orchestration/prefect.yaml`:
+Определён в `connectors/calltouch_loader/prefect/prefect.yaml`:
 
 ```yaml
 - name: calltouch-loader-clickhouse
-  entrypoint: orchestration/flows/calltouch.py:calltouch_loader_flow
+  entrypoint: connectors/calltouch_loader/prefect/flows.py:calltouch_loader_flow
   schedule:
     cron: "0 8 * * *"
     timezone: Asia/Novosibirsk

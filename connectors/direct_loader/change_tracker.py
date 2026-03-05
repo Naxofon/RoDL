@@ -247,7 +247,7 @@ class DirectChangeTracker:
                 db_has_metrics = False
 
             if api_has_metrics != db_has_metrics:
-                get_logger().info(
+                get_logger().debug(
                     f"{client_login} {date_str}: data presence mismatch - API: {api_has_metrics}, DB: {db_has_metrics}"
                 )
                 days_to_update.append(date_str)
@@ -277,7 +277,7 @@ class DirectChangeTracker:
                     reasons.extend(mismatched_conversions)
 
                 if reasons:
-                    get_logger().info(
+                    get_logger().debug(
                         f"{client_login} {date_str}: detected changes - {', '.join(reasons)}"
                     )
                     days_to_update.append(date_str)

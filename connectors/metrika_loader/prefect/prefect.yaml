@@ -1,0 +1,17 @@
+prefect-version: "3.4.22"
+project:
+  name: loader-dashboard
+deployments:
+  - name: metrika-loader-clickhouse
+    entrypoint: connectors/metrika_loader/prefect/flows.py:metrika_loader_flow
+    schedule:
+      cron: "0 7 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - metrika
+    parameters:
+      track_changes: true
+      lookback_days: 60

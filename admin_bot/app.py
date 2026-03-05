@@ -13,12 +13,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if PROJECT_ROOT.as_posix() not in sys.path:
     sys.path.insert(0, PROJECT_ROOT.as_posix())
 
-from orchestration.loader_registry import is_loader_enabled
 from config.settings import settings
 from handlers.commands import router_command
 from handlers.callbacks import router_main
-from handlers.admin_panel import router_admin_panel
+from admin.handlers import router_admin_panel
 from handlers.logs import check_logs
+from services.connector_plugins import (
+    get_enabled_connector_admin_bot_plugins,
+    get_enabled_connector_bot_plugins,
+    load_admin_router_for_plugin,
+    load_router_for_plugin,
+)
 
 
 logging.basicConfig(
@@ -54,13 +59,6 @@ async def shutdown_handler(dp: Dispatcher, bot: Bot):
     await bot.session.close()
 
 
-_CONNECTOR_ROUTERS = [
-    ("metrika_loader", "handlers.metrika", "router_metrika"),
-    ("direct_loader", "handlers.direct", "router_direct"),
-    ("calltouch_loader", "handlers.calltouch", "router_calltouch"),
-    ("vk_loader", "handlers.vk", "router_vk")
-]
-
 async def main() -> None:
     """Main bot entry point."""
     if not settings.BOT_TOKEN:
@@ -73,17 +71,21 @@ async def main() -> None:
     dp.include_router(router_main)
     dp.include_router(router_admin_panel)
 
-    for loader_name, module_path, router_attr in _CONNECTOR_ROUTERS:
-        if not is_loader_enabled(loader_name):
-            continue
+    for plugin in get_enabled_connector_admin_bot_plugins():
         try:
-            import importlib
-            module = importlib.import_module(module_path)
-            router = getattr(module, router_attr)
+            router = load_admin_router_for_plugin(plugin)
             dp.include_router(router)
-            logger.info(f"{loader_name} router registered")
-        except ImportError as e:
-            logger.warning(f"{loader_name} enabled but router import failed: {e}")
+            logger.info("%s admin router registered via connector plugin", plugin.loader_name)
+        except Exception as e:
+            logger.warning("%s enabled but admin bot plugin router import failed: %s", plugin.loader_name, e)
+
+    for plugin in get_enabled_connector_bot_plugins():
+        try:
+            router = load_router_for_plugin(plugin)
+            dp.include_router(router)
+            logger.info("%s router registered via connector plugin", plugin.loader_name)
+        except Exception as e:
+            logger.warning("%s enabled but bot plugin router import failed: %s", plugin.loader_name, e)
 
     bot = Bot(
         token=settings.BOT_TOKEN,

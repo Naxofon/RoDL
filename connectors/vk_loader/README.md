@@ -14,10 +14,19 @@
 
 ```
 connectors/vk_loader/
-├── access.py           # Сбор агентских credentials из Accesses, фильтрация активных клиентов
-├── api.py              # VkApiClient — работа с VK Ads API
-├── config.py           # Константы, списки колонок, семафор запросов
-└── loader_service.py   # Основная логика загрузки данных
+├── access.py                # Сбор агентских credentials из Accesses
+├── api.py                   # VkApiClient — работа с VK Ads API
+├── config.py                # Константы, списки колонок, семафор запросов
+├── loader_service.py        # Основная логика загрузки данных
+├── prefect/
+│   ├── flows.py             # Prefect flow и task-обёртка
+│   ├── clickhouse_utils.py  # AsyncVkDatabase
+│   └── prefect.yaml         # Deployment и расписание
+└── bot/
+    ├── handlers.py          # Пользовательские команды VK Ads
+    ├── keyboards.py         # Клавиатуры раздела
+    ├── plugin.py            # Регистрация router/keyboard/admin-кнопки
+    └── admin/handlers.py    # Админ-массовая выгрузка VK
 ```
 
 ## Поток данных
@@ -26,7 +35,7 @@ connectors/vk_loader/
 Prefect / Telegram Bot
         │
         ▼
-vk_loader_flow  (orchestration/flows/vk.py)
+vk_loader_flow  (connectors/vk_loader/prefect/flows.py)
         │
         └── run_vk_all()
                 └── upload_data_for_all_agencies()
@@ -123,11 +132,11 @@ CLICKHOUSE_ACCESS_PASSWORD=access_password
 
 ## Деплоймент Prefect
 
-Определён в `orchestration/prefect.yaml`:
+Определён в `connectors/vk_loader/prefect/prefect.yaml`:
 
 ```yaml
 - name: vk-loader-daily
-  entrypoint: orchestration/flows/vk.py:vk_loader_flow
+  entrypoint: connectors/vk_loader/prefect/flows.py:vk_loader_flow
   schedule:
     cron: "30 8 * * *"
     timezone: Asia/Novosibirsk

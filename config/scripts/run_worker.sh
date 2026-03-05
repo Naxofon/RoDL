@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "[worker] Validating loader configuration..."
-bash "${SCRIPT_DIR}/validate_loaders.sh"
+VALIDATE_LOADERS_QUIET=1 bash "${SCRIPT_DIR}/validate_loaders.sh"
 
 API_URL="${PREFECT_API_URL:-http://prefect-server:4200/api}"
 POOL="${PREFECT_WORK_POOL:-default-agent-pool}"
