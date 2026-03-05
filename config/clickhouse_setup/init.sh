@@ -60,7 +60,7 @@ parse_config() {
 
 CFG_ENTRIES=""
 CONFIG_PATH=""
-for candidate in "${LOADER_CONFIG_PATH:-}" "${SCRIPT_DIR}/../config/loaders.yaml"; do
+for candidate in "${LOADER_CONFIG_PATH:-}" "${SCRIPT_DIR}/../loaders.yaml"; do
   [ -z "$candidate" ] && continue
   if [ -f "$candidate" ]; then
     CFG_ENTRIES="$(parse_config "$candidate")"

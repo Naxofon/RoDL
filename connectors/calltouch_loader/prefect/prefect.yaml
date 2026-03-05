@@ -1,0 +1,16 @@
+prefect-version: "3.4.22"
+project:
+  name: loader-dashboard
+deployments:
+  - name: calltouch-loader-clickhouse
+    entrypoint: connectors/calltouch_loader/prefect/flows.py:calltouch_loader_flow
+    schedule:
+      cron: "0 8 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - calltouch
+    parameters:
+      tdelta: 10

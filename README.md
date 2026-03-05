@@ -1,6 +1,10 @@
-# RoDL — Система загрузки рекламных и аналитических данных
+<p align="center">
+  <img src="docs/logo.jpg" alt="RoDL" width="2000"/>
+</p>
 
-Система оркестрации и управления потоками данных из рекламных и аналитических систем (Яндекс.Директ, Яндекс.Метрика, Calltouch, VK Ads) в ClickHouse с использованием Prefect 3 и интеграцией Telegram-бота для администрирования.
+# Система загрузки рекламных и аналитических данных
+
+Оркестрации и управления потоками данных из рекламных и аналитических систем (Яндекс.Директ, Яндекс.Метрика, Calltouch, VK Ads) в ClickHouse с использованием Prefect 3 и интеграцией Telegram-бота для администрирования.
 
 ## Содержание
 
@@ -10,8 +14,10 @@
 - [Конфигурация](#конфигурация)
 - [Администрирование через Telegram](#администрирование-через-telegram)
 - [Деплойменты и расписание](#деплойменты-и-расписание)
+- [Модульность системы](#модульность-системы)
 - [Change Tracking](#change-tracking)
 - [Добавление нового коннектора](#добавление-нового-коннектора)
+- [Сообщество](#сообщество)
 
 ---
 
@@ -128,23 +134,23 @@ databases:
 loaders:
   direct_loader:
     enabled: true
-    display_name: "Яндекс.Директ"
+    display_name: "💰 Яндекс.Директ"
     databases:
       direct_analytics: loader_direct_analytics
       direct_light: loader_direct_light
   metrika_loader:
     enabled: true
-    display_name: "Яндекс.Метрика"
+    display_name: "📊 Яндекс.Метрика"
     databases:
       metrika: loader_metrika
   calltouch_loader:
     enabled: true
-    display_name: "Calltouch"
+    display_name: "📞 Calltouch"
     databases:
       calltouch: loader_calltouch
   vk_loader:
     enabled: true
-    display_name: "VK Ads"
+    display_name: "🎯 VK Ads"
     databases:
       vk: loader_vk
 ```
@@ -179,7 +185,7 @@ loaders:
 
 | Переменная | Описание |
 |------------|----------|
-| `TZ` | Временная зона. Влияет на все cron-расписания в `orchestration/prefect.yaml`. Допустимые значения: [список TZ](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). |
+| `TZ` | Временная зона. Влияет на cron-расписания в `connectors/*/prefect/prefect.yaml`. Допустимые значения: [список TZ](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). |
 | `PREFECT_API_URL` | URL Prefect API. `http://localhost:4200/api` — для обращений с хост-машины (CLI, браузер). Внутри контейнеров используется `http://prefect-server:4200/api` — это значение подставляется через `docker-compose.yml` автоматически. |
 
 #### Telegram Bot
@@ -198,7 +204,7 @@ loaders:
 | Роль | Доступные функции |
 |------|-------------------|
 | `User` | Нет доступа. После `/start` отправляется уведомление всем администраторам с Telegram ID и именем пользователя. |
-| `Alpha` | Главное меню: управление токенами по каждому коннектору (добавить/удалить клиента, просмотр списка), запуск загрузки для отдельного клиента через Prefect. |
+| `Alpha` | Доступ только к выгрузке данных в коннекторах, где она настроена (`💾 Выгрузка`). Админ-панель и управление токенами/клиентами недоступны. |
 | `Admin` | Всё, что доступно Alpha. Дополнительно: управление пользователями (добавить/снять роль Admin или Alpha), массовый запуск загрузки всех коннекторов, экспорт и импорт резервной копии таблицы `Accesses`, очистка устаревших клиентов, полный сброс базы данных. Получает автоматические уведомления об ошибках Prefect. |
 
 **Первичная регистрация администратора:**
@@ -212,7 +218,7 @@ loaders:
 
 - `/start` — регистрация / вход в главное меню
 - `/reg <код>` — первичная регистрация администратора
-- `/a` — панель администратора (только для роли Admin)
+- `/a` — панель администратора (только для роли Admin; для `Alpha` команда недоступна)
 
 ### Управление токенами
 
@@ -226,7 +232,37 @@ loaders:
 
 ## Деплойменты и расписание
 
-Prefect-деплойменты определены в `orchestration/prefect.yaml` и создаются автоматически при старте `prefect-bootstrap`. Расписание, параметры и инструкция по ручному запуску — в README каждого коннектора.
+Prefect-деплойменты определены в `connectors/<loader>/prefect/prefect.yaml` и создаются автоматически при старте `prefect-bootstrap` для включённых (`enabled: true`) коннекторов из `config/loaders.yaml`. Расписание, параметры и инструкция по ручному запуску — в README каждого коннектора.
+
+---
+
+## Модульность системы
+
+Система построена вокруг модулей коннекторов: всё, что относится к конкретному источнику данных, лежит внутри `connectors/<loader>/`.
+
+### Что входит в модуль коннектора
+
+- `prefect/flows.py` и `prefect/prefect.yaml` — оркестрация и расписание.
+- `prefect/clickhouse_utils.py` — ClickHouse-адаптер коннектора.
+- `bot/` и `bot/admin/` (опционально) — пользовательские и админские хендлеры бота.
+- `bot/plugin.py` — декларативное подключение коннектора в общий бот.
+- `loader_service.py`, `access.py`, `tasks.py` и т.д. — доменная логика.
+
+### Плюсы системы
+
+- Включение/выключение коннектора через `config/loaders.yaml` без правок в ядре.
+- Минимум конфликтов: каждый коннектор работает в своей папке.
+- Быстрый перенос: можно делиться коннектором как отдельным модулем.
+- Простое масштабирование: новые коннекторы добавляются по единому шаблону.
+
+### Краткий гайд по новому коннектору
+
+1. Создайте `connectors/my_loader/` и базовую бизнес-логику (`loader_service.py`, `access.py`).
+2. Добавьте `connectors/my_loader/prefect/flows.py`, `connectors/my_loader/prefect/prefect.yaml`, `connectors/my_loader/prefect/clickhouse_utils.py`.
+3. Добавьте bot-интеграцию: `connectors/my_loader/bot/handlers.py`, `.../keyboards.py`, `.../plugin.py` (и `bot/admin/` при необходимости).
+4. Зарегистрируйте коннектор в `config/loaders.yaml` (`enabled`, `display_name`, `databases`).
+5. Пересоздайте деплойменты: `docker compose restart prefect-bootstrap`.
+6. Проверьте, что коннектор появился в Telegram-боте и его deployment создан в Prefect.
 
 ---
 
@@ -253,18 +289,6 @@ Prefect-деплойменты определены в `orchestration/prefect.ya
 
 ---
 
-## Добавление нового коннектора
-
-1. **Создайте пакет** `connectors/my_connector/` с `__init__.py`, `loader_service.py`, `access.py`
-2. **Зарегистрируйте БД** в `config/loaders.yaml`
-3. **Создайте Prefect flow** в `orchestration/flows/my_connector.py`
-4. **Добавьте деплоймент** в `orchestration/prefect.yaml`
-5. **Пересоздайте деплойменты**: `docker compose restart prefect-bootstrap`
-
-За образец используйте любой из существующих коннекторов.
-
----
-
 ## Участие в разработке
 
 - [CONTRIBUTING.md](./.github/CONTRIBUTING.md)
@@ -277,3 +301,7 @@ Prefect-деплойменты определены в `orchestration/prefect.ya
 ## Лицензия
 
 Проект распространяется по лицензии GNU AGPLv3 — [LICENSE](./LICENSE)
+
+## Сообщество
+
+- [Присоединяйтесь в сообщество](https://t.me/help_rodl) — актуальные вопросы, помощь и поддержка

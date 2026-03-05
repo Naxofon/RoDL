@@ -14,15 +14,24 @@
 
 ```
 connectors/direct_loader/
-├── config.py          # Профили данных, списки полей, типы токенов, rate limiters
-├── access.py          # Получение и обновление токенов клиентов из Accesses
-├── uploader.py        # YaStatUploader — загрузка отчётов из API и запись в ClickHouse
-├── change_tracker.py  # DirectChangeTracker — обнаружение изменённых дней
-├── tasks.py           # Async-функции верхнего уровня (вызываются из flow)
-├── jobs.py            # DirectReloadJob, plan_direct_reload_jobs
-├── shared_utils.py    # Утилиты: нормализация логина, работа с датами, emit_prefect_event
-├── report_limits.py   # GlobalRateLimiter, PerAdvertiserRateLimiter, OfflineReportTracker
-└── logging_utils.py   # get_logger() — Prefect-логгер с fallback на файл
+├── config.py                # Профили данных, списки полей, типы токенов, rate limiters
+├── access.py                # Получение и обновление токенов клиентов из Accesses
+├── uploader.py              # YaStatUploader — загрузка отчётов из API и запись в ClickHouse
+├── change_tracker.py        # DirectChangeTracker — обнаружение изменённых дней
+├── tasks.py                 # Async-функции верхнего уровня
+├── jobs.py                  # DirectReloadJob, plan_direct_reload_jobs
+├── shared_utils.py          # Нормализация логина, даты, emit_prefect_event
+├── report_limits.py         # GlobalRateLimiter, PerAdvertiserRateLimiter, OfflineReportTracker
+├── logging_utils.py         # get_logger() — Prefect-логгер
+├── prefect/
+│   ├── flows.py             # Prefect flow и tasks-обёртки
+│   ├── clickhouse_utils.py  # AsyncDirectDatabase
+│   └── prefect.yaml         # Deployment и расписания
+└── bot/
+    ├── handlers.py          # Пользовательские команды Директа
+    ├── keyboards.py         # Клавиатуры раздела
+    ├── plugin.py            # Регистрация router/keyboard/admin-кнопки
+    └── admin/handlers.py    # Админ-массовые выгрузки
 ```
 
 ## Поток данных
@@ -31,7 +40,7 @@ connectors/direct_loader/
 Prefect / Telegram Bot
         │
         ▼
-direct_loader_flow  (orchestration/flows/direct.py)
+direct_loader_flow  (connectors/direct_loader/prefect/flows.py)
         │
         ├── track_changes=True
         │       ├── get_direct_clients_task()
@@ -60,7 +69,7 @@ direct_loader_flow  (orchestration/flows/direct.py)
 - `agency_parsed` — клиент, найденный через агентский аккаунт
 - `not_agency_token` — токен конкретного клиента без агентского доступа
 
-Управление токенами — через Telegram-бот (раздел Директ) или напрямую через `AsyncDirectDatabase` из `orchestration/clickhouse_utils/direct.py`.
+Управление токенами — через Telegram-бот (раздел Директ) или напрямую через `AsyncDirectDatabase` из `connectors/direct_loader/prefect/clickhouse_utils.py`.
 
 ## Переменные окружения
 
@@ -202,7 +211,7 @@ CLICKHOUSE_ACCESS_PASSWORD=access_password
 
 ## Деплойменты Prefect
 
-Определены в `orchestration/prefect.yaml`:
+Определены в `connectors/direct_loader/prefect/prefect.yaml`:
 
 | Деплоймент | Расписание (NSK) | Профиль | track_changes |
 |------------|-----------------|---------|---------------|

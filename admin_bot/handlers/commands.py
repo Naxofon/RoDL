@@ -5,8 +5,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
 
 from database.user import UserDatabaseConnector
-from keyboards.inline import get_kb_main, get_kb_admin
+from keyboards.inline import get_kb_main
+from admin.keyboards import get_kb_admin
 from config.settings import settings
+from services.user_roles import get_user_role
 
 
 router_command = Router()
@@ -25,9 +27,7 @@ async def command_start_handler(message: types.Message, state: FSMContext) -> No
 
     if not existing_user:
         await db_connector.add_user(user_id=user_id, name=user_name, role='User')
-        user_role = 'User'
-    else:
-        _, _, user_role = existing_user
+    user_role = await get_user_role(user_id)
 
     await state.clear()
 
@@ -54,7 +54,7 @@ async def command_start_handler(message: types.Message, state: FSMContext) -> No
             )
 
     elif user_role in ['Alpha', 'Admin']:
-        await message.answer("🤖 Добро пожаловать!", reply_markup=get_kb_main())
+        await message.answer("🤖 Добро пожаловать!", reply_markup=get_kb_main(user_role=user_role))
 
     else:
         await message.answer("🤖 Авторизируйтесь через /start")
@@ -66,12 +66,15 @@ async def adm_client(message: types.Message, state: FSMContext) -> None:
     db_connector = UserDatabaseConnector(settings.DB_NAME)
     await db_connector.initialize()
 
+    role = await get_user_role(message.from_user.id)
     admin_user_ids = await db_connector.get_admin_user_ids()
     user_id = str(message.from_user.id)
 
-    if user_id in admin_user_ids:
+    if role == "Admin" and user_id in admin_user_ids:
         await state.clear()
         await message.answer(text="🤖 <i>Админ-панель</i>", reply_markup=get_kb_admin())
+    elif role == "Alpha":
+        await message.answer("❌ Команда /a доступна только администраторам.")
     else:
         first_name = message.from_user.first_name or ""
         last_name = message.from_user.last_name or ""
@@ -127,5 +130,5 @@ async def register_admin_handler(message: types.Message, state: FSMContext) -> N
     await state.clear()
     await message.answer(
         f"🤖 Успешная регистрация!\n\n{user_name}, вы зарегистрированы как администратор.\n\nИспользуйте /start для доступа к боту.",
-        reply_markup=get_kb_main()
+        reply_markup=get_kb_main(user_role="Admin")
     )

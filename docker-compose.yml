@@ -120,6 +120,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/workspace/prefect_loader
+      - connector_configs:/connector_configs
     working_dir: /workspace/prefect_loader
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -146,6 +147,7 @@ services:
       ADMIN_REGISTRATION_CODE: ${ADMIN_REGISTRATION_CODE}
     volumes:
       - .:/workspace/prefect_loader
+      - connector_configs:/connector_configs
     working_dir: /workspace/prefect_loader
 
 volumes:
@@ -153,3 +155,4 @@ volumes:
   prefect_db_data:
   clickhouse_data:
   clickhouse_logs:
+  connector_configs:

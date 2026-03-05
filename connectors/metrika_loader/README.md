@@ -14,12 +14,21 @@
 
 ```
 connectors/metrika_loader/
-├── access.py          # Сбор токенов счётчиков из Accesses (явные + агентские)
-├── change_tracker.py  # MetrikaChangeTracker — обнаружение изменённых дней
-├── change_utils.py    # AsyncRequestLimiter, GoalMetadata, classify_goals, mask_token, format_auth_fingerprint
-├── jobs.py            # MetrikaReloadJob, plan_metrika_reload_jobs
-├── operations.py      # Массовые операции: upload, fetch/write для заданий
-└── uploader.py        # YaMetrikaUploader — загрузка из Logs API и Reporting API
+├── access.py                # Сбор токенов счётчиков из Accesses (явные + агентские)
+├── change_tracker.py        # MetrikaChangeTracker — обнаружение изменённых дней
+├── change_utils.py          # AsyncRequestLimiter, GoalMetadata, classify_goals и утилиты
+├── jobs.py                  # MetrikaReloadJob, plan_metrika_reload_jobs
+├── operations.py            # Массовые операции: upload, fetch/write для заданий
+├── uploader.py              # YaMetrikaUploader — загрузка из Logs API и Reporting API
+├── prefect/
+│   ├── flows.py             # Prefect flow и tasks-обёртки
+│   ├── clickhouse_utils.py  # AsyncMetrikaDatabase
+│   └── prefect.yaml         # Deployment и расписание
+└── bot/
+    ├── handlers.py          # Пользовательские команды Метрики
+    ├── keyboards.py         # Клавиатуры раздела
+    ├── plugin.py            # Регистрация router/keyboard/admin-кнопки
+    └── admin/handlers.py    # Админ-массовые выгрузки
 ```
 
 ## Поток данных
@@ -28,7 +37,7 @@ connectors/metrika_loader/
 Prefect / Telegram Bot
         │
         ▼
-metrika_loader_flow  (orchestration/flows/metrika.py)
+metrika_loader_flow  (connectors/metrika_loader/prefect/flows.py)
         │
         ├── track_changes=True
         │       ├── plan_metrika_jobs_task()         ← change detection для всех счётчиков
@@ -167,11 +176,11 @@ CLICKHOUSE_ACCESS_PASSWORD=access_password
 
 ## Деплоймент Prefect
 
-Определён в `orchestration/prefect.yaml`:
+Определён в `connectors/metrika_loader/prefect/prefect.yaml`:
 
 ```yaml
 - name: metrika-loader-clickhouse
-  entrypoint: orchestration/flows/metrika.py:metrika_loader_flow
+  entrypoint: connectors/metrika_loader/prefect/flows.py:metrika_loader_flow
   schedule:
     cron: "0 7 * * *"
     timezone: Asia/Novosibirsk

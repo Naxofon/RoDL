@@ -53,8 +53,10 @@ admin_bot/
 │   ├── callbacks.py         # Обработчики главного меню
 │   ├── direct.py            # Yandex.Direct FSM обработчики
 │   ├── metrika.py           # Yandex.Metrika FSM обработчики
-│   ├── admin_panel.py       # Админ-панель (управление пользователями, bulk uploads)
 │   └── logs.py              # Мониторинг логов
+├── admin/
+│   ├── handlers.py          # Админ-панель (управление пользователями, bulk uploads)
+│   └── keyboards.py         # Клавиатуры админ-панели
 ├── keyboards/
 │   ├── __init__.py
 │   └── inline.py            # Inline-клавиатуры
@@ -110,7 +112,7 @@ sequenceDiagram
 | `router_metrika` | `main_data/metrika_handlers.py` | `MetrikaStates` (`add/remove/update`) | Управление таблицей конфигураций метрики, генерация CSV, запуск change tracker по счётчику. |
 | `router_calltouch` | `main_data/calltouch_handlers.py` | `CalltouchStates` (`add/remove/update`) | Работает с `AsyncCalltouchDatabase`, запускает pipe `process_single_client(site_id, tdelta)`. |
 | `router_logs` | `main_data/logs_handler.py` | `/lgs`, `/lgs_res`, `check_logs()` | Читает внешние логи и уведомляет админов при `Error`. |
-| `router_admin_*` | `admin/*.py` | FSM по добавлению/удалению ролей | Используют `UserDatabaseConnector` для смены ролей. |
+| `router_admin_*` | `admin/handlers.py` | FSM по добавлению/удалению ролей | Используют `UserDatabaseConnector` для смены ролей. |
 
 ### Prefect интеграция для массовых выгрузок
 
@@ -165,7 +167,7 @@ sequenceDiagram
 - `main_data/calltouch_handlers.py`:
   - `process_add_ch_client` → формат `account site_id token`.
   - `process_update_ch_data` → формат `site_id timedelta`, вызывает `process_single_client`.
-- `admin/*.py`:
+- `admin/handlers.py`:
   - `add_new_admin_start_handler` → выводит текущих админов, ожидает ID.
   - `process_remove_admin` → переводит пользователя в роль `User`.
   - `process_add_new_alpha` → повышает до `Alpha`.

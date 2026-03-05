@@ -1,0 +1,46 @@
+prefect-version: "3.4.22"
+project:
+  name: loader-dashboard
+deployments:
+  - name: direct-analytics-change
+    entrypoint: connectors/direct_loader/prefect/flows.py:direct_loader_flow
+    schedule:
+      cron: "0 6 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - direct
+      - analytics
+    parameters:
+      track_changes: true
+      profile: "analytics"
+  - name: direct-light-hourly
+    entrypoint: connectors/direct_loader/prefect/flows.py:direct_loader_flow
+    schedule:
+      cron: "0 7-13 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - direct
+      - light
+    parameters:
+      track_changes: true
+      profile: "light"
+  - name: direct-light-3h
+    entrypoint: connectors/direct_loader/prefect/flows.py:direct_loader_flow
+    schedule:
+      cron: "0 14-23/3 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - direct
+      - light
+    parameters:
+      track_changes: true
+      profile: "light"

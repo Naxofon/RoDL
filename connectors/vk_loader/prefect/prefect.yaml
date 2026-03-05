@@ -1,0 +1,16 @@
+prefect-version: "3.4.22"
+project:
+  name: loader-dashboard
+deployments:
+  - name: vk-loader-daily
+    entrypoint: connectors/vk_loader/prefect/flows.py:vk_loader_flow
+    schedule:
+      cron: "30 8 * * *"
+      timezone: Asia/Novosibirsk
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - vk
+    parameters:
+      lookback_days: 10
