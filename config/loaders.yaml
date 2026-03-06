@@ -24,13 +24,3 @@ loaders:
     display_name: "🎯 VK Ads"
     databases:
       vk: loader_vk
-  wordstat_loader:
-    enabled: true
-    display_name: "📈 Wordstat"
-    databases:
-      wordstat: loader_wordstat
-  custom_loader:
-    enabled: true
-    display_name: "🧩 Custom AAM"
-    databases:
-      custom_loader: loader_custom
