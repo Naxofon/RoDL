@@ -189,10 +189,22 @@ def ensure_table(
     order_clause = (
         ", ".join(f"`{c}`" for c in order_by) if order_by else "tuple()"
     )
-    partition_col = _pick_partition_column(normalized.columns, col_types)
+    partition_col = next(
+        (
+            col
+            for col in order_by
+            if _is_date_like(col_types.get(col, ""))
+        ),
+        None,
+    ) or _pick_partition_column(normalized.columns, col_types)
     partition_clause = (
         f" PARTITION BY {_partition_expression(partition_col, col_types[partition_col])}"
         if partition_col
+        else ""
+    )
+    primary_clause = (
+        f" PRIMARY KEY ({order_clause})"
+        if order_by
         else ""
     )
     db = getattr(client, "database", None) or CLICKHOUSE_DATABASE
@@ -200,6 +212,7 @@ def ensure_table(
         f"CREATE TABLE IF NOT EXISTS {db}.{table} "
         f"({cols_clause}) ENGINE = MergeTree"
         f"{partition_clause} "
+        f"{primary_clause} "
         f"ORDER BY ({order_clause}) "
         f"SETTINGS index_granularity = {_INDEX_GRANULARITY}"
     )

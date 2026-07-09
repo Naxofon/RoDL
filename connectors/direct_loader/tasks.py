@@ -46,7 +46,11 @@ async def unload_data_by_day_for_all_clients(start_date, end_date, profile: str 
     await target_db.init_db()
     access_db = AsyncDirectDatabase()
     await access_db.init_db()
-    login_token_dict = await collect_direct_login_tokens(access_db, profile=profile)
+    login_token_dict = await collect_direct_login_tokens(
+        access_db,
+        profile=profile,
+        require_analytics_enabled=profile == "analytics",
+    )
     if not login_token_dict:
         get_logger().warning("Direct: no client tokens found in Accesses; aborting unload.")
         return
@@ -152,7 +156,11 @@ async def unload_data_with_changes_tracking_for_all_clients(
     access_db = AsyncDirectDatabase()
     await access_db.init_db()
 
-    login_tokens = await collect_direct_login_tokens(access_db, profile=profile)
+    login_tokens = await collect_direct_login_tokens(
+        access_db,
+        profile=profile,
+        require_analytics_enabled=profile == "analytics",
+    )
     if not login_tokens:
         get_logger().warning("No clients to process — exiting.")
         return

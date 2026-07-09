@@ -4,7 +4,7 @@
 
 # Система загрузки рекламных и аналитических данных
 
-Оркестрации и управления потоками данных из рекламных и аналитических систем (Яндекс.Директ, Яндекс.Метрика, Calltouch, VK Ads) в ClickHouse с использованием Prefect 3 и интеграцией Telegram-бота для администрирования.
+Оркестрации и управления потоками данных из рекламных и аналитических систем (Яндекс.Директ, Яндекс.Метрика, Calltouch, Callibri, VK Ads, Roistat) в ClickHouse с использованием Prefect 3 и интеграцией Telegram-бота для администрирования.
 
 ## Содержание
 
@@ -25,7 +25,7 @@
 
 | Слой | Компонент | Описание |
 |------|-----------|----------|
-| **Источники** | Яндекс.Директ, Яндекс.Метрика, Calltouch, VK Ads | Внешние API |
+| **Источники** | Яндекс.Директ, Яндекс.Метрика, Calltouch, Callibri, VK Ads, Roistat | Внешние API |
 | **Коннекторы** | `connectors/` | Асинхронные загрузчики с rate limiting и change tracking |
 | **Оркестрация** | Prefect Server + Worker | Планирование, retry-логика, мониторинг (UI на порту 4200) |
 | **Хранилище** | ClickHouse | Колоночная БД; `loader.Accesses` — централизованное хранилище токенов |
@@ -44,14 +44,17 @@
 
 ### Коннекторы (`connectors/`)
 
-Каждый коннектор содержит подробный README с описанием структуры, схемы таблиц, параметров и инструкцией по запуску:
+Коннекторы содержат README или модульную структуру с Prefect- и bot-интеграцией:
 
 | Коннектор | Описание | README |
 |-----------|----------|--------|
 | `direct_loader` | Статистика кампаний Яндекс.Директ (Reporting API), два профиля: analytics и light | [README](connectors/direct_loader/README.md) |
 | `metrika_loader` | Логи визитов Яндекс.Метрики (Logs API + Reporting API), change tracking по дням | [README](connectors/metrika_loader/README.md) |
 | `calltouch_loader` | Звонки и заявки Calltouch (Calls Diary API + Requests API) | [README](connectors/calltouch_loader/README.md) |
+| `callibri_loader` | Звонки и заявки Callibri | [README](connectors/callibri_loader/README.md) |
 | `vk_loader` | Статистика рекламных кампаний VK Ads, агентские аккаунты | [README](connectors/vk_loader/README.md) |
+| `roistat_loader` | Аналитика, звонки и визиты Roistat по проектам | `connectors/roistat_loader/` |
+| `add_client` | Служебный Prefect-flow для ручного добавления доступов в `Accesses` | [README](connectors/add_client/README.md) |
 
 ### Prefect (`orchestration/`)
 
@@ -62,7 +65,7 @@
 
 ### ClickHouse
 
-Базы данных: `loader`, `loader_direct_analytics`, `loader_direct_light`, `loader_metrika`, `loader_calltouch`, `loader_vk`.
+Базы данных: `loader`, `loader_direct_analytics`, `loader_direct_light`, `loader_metrika`, `loader_calltouch`, `loader_callibri`, `loader_vk`, `loader_roistat`.
 
 Таблица `loader.Accesses` централизованно хранит все токены доступа к API:
 
@@ -71,7 +74,8 @@ CREATE TABLE loader.Accesses (
     login     Nullable(String),   -- логин клиента или идентификатор
     token     Nullable(String),   -- OAuth-токен доступа
     container Nullable(String),   -- числовое значение, например номер контейнера/аккаунта
-    type      Nullable(String)    -- тип сервиса (direct, metrika, metrika:agency, vk, ...)
+    type      Nullable(String),   -- тип сервиса (direct, metrika, metrika:agency, vk, ...)
+    analytics_enabled UInt8 DEFAULT 0 -- флаг включения расширенной аналитики
 ) ENGINE = MergeTree
 ORDER BY (type, container, login);
 ```
@@ -153,6 +157,19 @@ loaders:
     display_name: "🎯 VK Ads"
     databases:
       vk: loader_vk
+  add_client:
+    enabled: true
+    display_name: "➕ Add Client Access"
+  callibri_loader:
+    enabled: true
+    display_name: "☎️ Callibri"
+    databases:
+      callibri: loader_callibri
+  roistat_loader:
+    enabled: true
+    display_name: "📝 Roistat"
+    databases:
+      roistat: loader_roistat
 ```
 
 Чтобы отключить загрузчик — `enabled: false`. Имена БД настраиваются в `databases`.
@@ -222,7 +239,7 @@ loaders:
 
 ### Управление токенами
 
-Токены добавляются через раздел нужного коннектора в боте. Типы токенов и форматы ввода описаны в README каждого коннектора.
+Токены добавляются через раздел нужного коннектора в боте или через служебный flow `add-client-access`. Типы токенов и форматы ввода описаны в README коннекторов; для Roistat настройки секций (`analytics`, `calls`, `visits`) передаются через тип доступа в `Accesses`.
 
 ### Мониторинг
 
@@ -232,7 +249,7 @@ loaders:
 
 ## Деплойменты и расписание
 
-Prefect-деплойменты определены в `connectors/<loader>/prefect/prefect.yaml` и создаются автоматически при старте `prefect-bootstrap` для включённых (`enabled: true`) коннекторов из `config/loaders.yaml`. Расписание, параметры и инструкция по ручному запуску — в README каждого коннектора.
+Prefect-деплойменты определены в `connectors/<loader>/prefect/prefect.yaml` и создаются автоматически при старте `prefect-bootstrap` для включённых (`enabled: true`) коннекторов из `config/loaders.yaml`. Расписание, параметры и инструкция по ручному запуску — в README или `prefect.yaml` каждого коннектора.
 
 ---
 

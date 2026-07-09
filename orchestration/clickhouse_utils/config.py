@@ -79,9 +79,9 @@ CLICKHOUSE_DB_DIRECT = CLICKHOUSE_DB_DIRECT_ANALYTICS
 
 CLICKHOUSE_DB_METRIKA = _db_value("metrika", "loader_metrika")
 CLICKHOUSE_DB_CALLTOUCH = _db_value("calltouch", "loader_calltouch")
+CLICKHOUSE_DB_CALLIBRI = _db_value("callibri", "loader_callibri")
 CLICKHOUSE_DB_VK = _db_value("vk", "loader_vk")
-CLICKHOUSE_DB_WORDSTAT = _db_value("wordstat", "loader_wordstat")
-CLICKHOUSE_DB_CUSTOM_LOADER = _db_value("custom_loader", "loader_custom")
+CLICKHOUSE_DB_ROISTAT = _db_value("roistat", "loader_roistat")
 
 CLICKHOUSE_ACCESS_DATABASE = _db_value("access", CLICKHOUSE_DATABASE)
 CLICKHOUSE_ACCESS_USER = os.getenv("CLICKHOUSE_ACCESS_USER", CLICKHOUSE_USER)
@@ -114,9 +114,9 @@ __all__ = [
     "CLICKHOUSE_DB_DIRECT",
     "CLICKHOUSE_DB_METRIKA",
     "CLICKHOUSE_DB_CALLTOUCH",
+    "CLICKHOUSE_DB_CALLIBRI",
     "CLICKHOUSE_DB_VK",
-    "CLICKHOUSE_DB_WORDSTAT",
-    "CLICKHOUSE_DB_CUSTOM_LOADER",
+    "CLICKHOUSE_DB_ROISTAT",
     "CLICKHOUSE_ACCESS_DATABASE",
     "CLICKHOUSE_ACCESS_USER",
     "CLICKHOUSE_ACCESS_PASSWORD",

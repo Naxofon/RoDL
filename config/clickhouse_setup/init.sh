@@ -139,10 +139,14 @@ CREATE TABLE IF NOT EXISTS ${DB_ACCESS}.Accesses
     login Nullable(String),
     token Nullable(String),
     container Nullable(String),
-    type Nullable(String)
+    type Nullable(String),
+    analytics_enabled UInt8 DEFAULT 0
 ) ENGINE = MergeTree
 ORDER BY (type, container, login)
 SETTINGS allow_nullable_key = 1;
+
+ALTER TABLE ${DB_ACCESS}.Accesses
+ADD COLUMN IF NOT EXISTS analytics_enabled UInt8 DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS ${DB_ACCESS}.AdminUsers
 (

@@ -10,7 +10,8 @@ coverage.xml
 htmlcov/
 
 # Jupyter Notebook
-.ipynb_checkpoints
+*.ipynb_checkpoints
+*.ipynb
 
 # Environments
 .env

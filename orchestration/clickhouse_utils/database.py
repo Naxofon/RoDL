@@ -252,10 +252,19 @@ class ClickhouseDatabase:
             " login Nullable(String),"
             " token Nullable(String),"
             " container Nullable(String),"
-            " type Nullable(String)"
+            " type Nullable(String),"
+            " analytics_enabled UInt8 DEFAULT 1"
             ") ENGINE = MergeTree ORDER BY (type, container, login) SETTINGS allow_nullable_key = 1"
         )
         self.client.command(ddl)
+        self.client.command(
+            f"ALTER TABLE {self.database}.Accesses "
+            "ADD COLUMN IF NOT EXISTS analytics_enabled UInt8 DEFAULT 1"
+        )
+        self.client.command(
+            f"ALTER TABLE {self.database}.Accesses "
+            "MODIFY COLUMN analytics_enabled UInt8 DEFAULT 1"
+        )
 
     async def _prepare_accesses(self):
         """Ensure the Accesses helper table and its database exist."""
@@ -342,7 +351,7 @@ class ClickhouseDatabase:
         if not ordered_logins:
             return
 
-        existing_map: dict[str | None, str | None] = {}
+        existing_map: dict[str | None, tuple[str | None, int]] = {}
         existing_predicates: list[str] = []
         non_null_logins = [
             login for login in ordered_logins if login is not None
@@ -367,18 +376,21 @@ class ClickhouseDatabase:
             )
             result = await asyncio.to_thread(
                 self.client.query,
-                f"SELECT login, token FROM {self.database}.Accesses "
+                f"SELECT login, token, analytics_enabled FROM {self.database}.Accesses "
                 f"WHERE {where_clause}",
             )
             for row in result.result_rows:
-                existing_map[row[0]] = row[1]
+                existing_map[row[0]] = (row[1], int(row[2] or 0))
 
-        rows_to_insert: list[dict[str, str | None]] = []
+        rows_to_insert: list[dict[str, Any]] = []
         clean_container = _as_nullable(container)
         clean_type = _as_nullable(stored_type)
         for login in ordered_logins:
-            current = existing_map.get(login, "__missing__")
-            if current == token:
+            current_token, current_analytics_enabled = existing_map.get(
+                login,
+                ("__missing__", 1),
+            )
+            if current_token == token:
                 continue
             rows_to_insert.append(
                 {
@@ -386,6 +398,7 @@ class ClickhouseDatabase:
                     "token": _as_nullable(token),
                     "container": clean_container,
                     "type": clean_type,
+                    "analytics_enabled": current_analytics_enabled,
                 }
             )
 
@@ -495,10 +508,10 @@ class ClickhouseDatabase:
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         result = await asyncio.to_thread(
             self.client.query,
-            f"SELECT login, token, container, type FROM {self.database}.Accesses{where}",
+            f"SELECT login, token, container, type, analytics_enabled FROM {self.database}.Accesses{where}",
         )
         rows: list[dict[str, Any]] = []
-        for login, token, cont, type_value in result.result_rows:
+        for login, token, cont, type_value, analytics_enabled in result.result_rows:
             service, subtype = _split_type(type_value)
             rows.append(
                 {
@@ -508,9 +521,40 @@ class ClickhouseDatabase:
                     "type": type_value,
                     "service": service,
                     "subtype": subtype,
+                    "analytics_enabled": int(analytics_enabled or 0),
                 }
             )
         return rows
+
+    async def set_access_analytics_enabled(
+        self,
+        login: str,
+        enabled: bool,
+        service_type: str | None = None,
+        container: str | None = None,
+        type_value: str | None = None,
+        include_null_type: bool = False,
+    ) -> None:
+        """Set the Direct analytics opt-in flag on Accesses rows for a login."""
+        await self._prepare_accesses()
+        clauses = [f"login = {_quote_nullable(login)}"]
+        type_clause = _build_type_predicate(
+            service_type,
+            type_value,
+            include_null=include_null_type,
+        )
+        if type_clause:
+            clauses.append(type_clause)
+        if container is not None:
+            clauses.append(f"container = {_quote_nullable(container)}")
+        where = " AND ".join(clauses)
+        value = 1 if enabled else 0
+        await asyncio.to_thread(
+            self.client.command,
+            f"ALTER TABLE {self.database}.Accesses "
+            f"UPDATE analytics_enabled = {value} WHERE {where}",
+            settings={"mutations_sync": 1},
+        )
 
     async def delete_access(
         self,

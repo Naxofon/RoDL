@@ -1,0 +1,15 @@
+prefect-version: "3.4.22"
+project:
+  name: loader-dashboard
+deployments:
+  - name: add-client-access
+    entrypoint: connectors/add_client/prefect/flows.py:add_client_access_flow
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+    tags:
+      - add_client
+      - accesses
+    parameters:
+      container: null
+      type_value: null

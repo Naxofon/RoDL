@@ -16,6 +16,10 @@ def get_kb_direct():
             types.InlineKeyboardButton(text="🗑️ Удалить агентство", callback_data="command_remove_yd_agency"),
         ],
         [
+            types.InlineKeyboardButton(text="📊 Аналитика ON", callback_data="command_enable_yd_analytics"),
+            types.InlineKeyboardButton(text="📉 Аналитика OFF", callback_data="command_disable_yd_analytics"),
+        ],
+        [
             types.InlineKeyboardButton(text="💾 Выгрузка", callback_data="command_upload_yd_data"),
         ],
         [

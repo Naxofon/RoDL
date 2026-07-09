@@ -60,7 +60,11 @@ async def get_direct_clients_task(
     await access_db.init_db()
 
     try:
-        login_tokens = await collect_direct_login_tokens(access_db, profile=profile)
+        login_tokens = await collect_direct_login_tokens(
+            access_db,
+            profile=profile,
+            require_analytics_enabled=profile == "analytics" and login is None,
+        )
         if not login_tokens:
             return {"clients": []}
 

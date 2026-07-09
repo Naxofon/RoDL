@@ -148,7 +148,7 @@ class YaStatUploader:
                 }
                 if goal_batch:
                     params["Goals"] = goal_batch
-                    params['AttributionModels'] = ['LSC']
+                    params['AttributionModels'] = ['LSCCD']
                 body = json.dumps({"method": "get", "params": params}, indent=4).encode('utf8')
                 report_ready = False
                 retry_attempts = 0
@@ -176,7 +176,7 @@ class YaStatUploader:
                         }
                         if goal_batch:
                             params_day["Goals"] = goal_batch
-                            params_day["AttributionModels"] = ["LSC"]
+                            params_day["AttributionModels"] = ["LSCCD"]
                         body_day = json.dumps({"method": "get", "params": params_day}, indent=4).encode("utf8")
                         try:
                             async with get_report_queue_semaphore():
@@ -327,6 +327,16 @@ class YaStatUploader:
             df = pd.concat(df_list, axis=1, join='outer')
             df = df.loc[:,~df.columns.duplicated()]
             df = df.dropna(subset=['Date'])
+
+            rename_dict = {}
+            for i in df.columns:
+                if i.endswith('_LSCCD'):
+                    rename_dict[i] = i.replace('_LSCCD', '_LSC')
+
+            df = df.rename(columns=rename_dict)
+
+            df['attribution'] = params['AttributionModels'][0]
+
             try:
                 df = process_conversion_columns(df, add_sum=True)
             except Exception as e:

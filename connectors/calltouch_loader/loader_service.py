@@ -1,5 +1,6 @@
 import asyncio
 import ast
+import re
 
 from datetime import datetime, timedelta, time
 from typing import Optional
@@ -20,6 +21,15 @@ from prefect_loader.orchestration.clickhouse_utils import (
 )
 
 pd.set_option('future.no_silent_downcasting', True)
+
+
+def _extract_yclid_from_url(url):
+    if not isinstance(url, str):
+        return None
+    match = re.search(r'(?:[?&])yclid=(\d+)', url)
+    if not match:
+        return None
+    return match.group(1)
 
 
 def _normalize_query_params(params: dict) -> dict:
@@ -219,6 +229,24 @@ def extract_tags_info(tags_str) -> dict:
         return {'category': '', 'type': '', 'names': ''}
 
 
+def extract_lead_phone(caller_number_lead):
+    """Extract lead phone number from Calltouch client.phones field."""
+    try:
+        if isinstance(caller_number_lead, str):
+            phones = ast.literal_eval(caller_number_lead)
+        else:
+            phones = caller_number_lead
+
+        if isinstance(phones, list) and phones:
+            first_phone = phones[0]
+            if isinstance(first_phone, dict):
+                return first_phone.get('phoneNumber') or pd.NA
+
+        return pd.NA
+    except Exception:
+        return pd.NA
+
+
 async def process_data(site_id: int, api_token: str, tdelta: int = 10, db: Optional[ClickhouseDatabase] = None):
     """
     Process Calltouch data for a single client.
@@ -251,7 +279,7 @@ async def process_data(site_id: int, api_token: str, tdelta: int = 10, db: Optio
         )
 
     calls_drop_columns = [
-        'redirectNumber', 'callphase', 'callerNumber',
+        'redirectNumber', 'callphase',
         'redirectNumber', 'phoneNumber', 'customFields',
         'ctGlobalId', 'phonesInText', 'dcm', 'callbackInfo', 'siteId',
         'yandexDirect', 'googleAdWords', 'timestamp', 'mapVisits',
@@ -277,7 +305,7 @@ async def process_data(site_id: int, api_token: str, tdelta: int = 10, db: Optio
     lead_drop_columns = [
         'date', 'siteId', 'mapVisits', 'dcm',
         'ctGlobalId', 'widgetInfo', 'customFields',
-        'client.fio', 'client.phones', 'client.contacts',
+        'client.fio', 'client.contacts',
         'session.ip', 'session.attrs', 'yandexDirect',
         'googleAdWords', 'order', 'requestUrl', 'ctClientId',
         'orders', 'status', 'session.utmSource', 'session.utmMedium',
@@ -287,6 +315,7 @@ async def process_data(site_id: int, api_token: str, tdelta: int = 10, db: Optio
     lead_rename_columns = {
         'dateStr': 'date',
         'RequestTags': 'tags',
+        'client.phones': 'callerNumber_lead',
         'session.sessionId': 'sessionId',
         'session.keywords': 'keywords',
         'session.city': 'city',
@@ -321,14 +350,14 @@ async def process_data(site_id: int, api_token: str, tdelta: int = 10, db: Optio
     combined_df = pd.concat(_frames, ignore_index=True) if _frames else pd.DataFrame()
 
     required_columns = [
-        'date', 'comments', 'tags', 'manager', 'attribution',
+        'date', 'comments', 'tags', 'callerNumber', 'callerNumber_lead', 'manager', 'attribution',
         'uniqTargetRequest', 'uniqueRequest', 'targetRequest',
         'uniqueCall', 'targetCall', 'uniqTargetCall', 'callbackCall',
         'CallSuccessful', 'CallDuration', 'subject',
         'requestId', 'sessionId', 'callId', 'yaClientId',
         'city', 'browser', 'device', 'os',
         'keywords', 'ref', 'url',
-        'source', 'medium', 'utmTerm', 'utmContent', 'utmCampaign'
+        'source', 'medium', 'utmTerm', 'utmContent', 'utmCampaign', 'additionalTags'
     ]
 
     for col in required_columns:
@@ -343,8 +372,12 @@ async def process_data(site_id: int, api_token: str, tdelta: int = 10, db: Optio
     combined_df['tag_type'] = tags_info.apply(lambda x: x['type'])
     combined_df['tag_names'] = tags_info.apply(lambda x: x['names'])
 
+    combined_df['callerNumber_lead'] = combined_df['callerNumber_lead'].apply(extract_lead_phone)
+
+    combined_df['caller_numbers'] = combined_df['callerNumber'].fillna(combined_df['callerNumber_lead'])
+
     combined_df = combined_df[[
-        'date', 'tag_category', 'tag_type', 'tag_names', 'additionalTags', 'comment_text', 'manager', 'attribution',
+        'date', 'tag_category', 'tag_type', 'tag_names', 'additionalTags', 'comment_text','caller_numbers', 'manager', 'attribution',
         'uniqTargetRequest', 'uniqueRequest', 'targetRequest',
         'uniqueCall', 'targetCall', 'uniqTargetCall', 'callbackCall',
         'CallSuccessful', 'CallDuration', 'subject',
@@ -358,6 +391,13 @@ async def process_data(site_id: int, api_token: str, tdelta: int = 10, db: Optio
 
     combined_df['domain'] = combined_df['url'].str.extract(r'^https?://(?:www\.)?([^/]+)')
     combined_df['domain'] = combined_df['domain'].str.rstrip('/')
+    combined_df.insert(
+        combined_df.columns.get_loc('url') + 1,
+        'yclid',
+        combined_df['url'].apply(_extract_yclid_from_url),
+    )
+
+
 
     bool_cols = ['uniqTargetRequest', 'targetRequest', 'uniqueRequest', 'uniqueCall', 'targetCall', 'uniqTargetCall', 'callbackCall']
     combined_df[bool_cols] = combined_df[bool_cols].infer_objects(copy=False).fillna(False).astype('bool')
@@ -371,7 +411,7 @@ async def process_data(site_id: int, api_token: str, tdelta: int = 10, db: Optio
         combined_df[col] = pd.to_numeric(combined_df[col], errors='coerce').astype('Int64')
 
     string_columns = [
-        'tag_category', 'tag_type', 'tag_names',
+        'tag_category', 'tag_type', 'tag_names','caller_numbers',
         'additionalTags', 'comment_text', 'manager',
         'subject', 'yaClientId', 'city', 'browser', 'device', 'os', 'keywords',
         'ref', 'url', 'source', 'medium', 'utmTerm', 'utmContent', 'utmCampaign', 'domain'

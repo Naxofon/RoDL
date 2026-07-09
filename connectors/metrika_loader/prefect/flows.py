@@ -14,6 +14,7 @@ from prefect_loader.connectors.metrika_loader import (
     plan_metrika_reload_jobs,
     refresh_data_with_change_tracker,
     upload_data_for_all_counters,
+    upload_data_for_single_counter,
     write_metrika_job_data,
 )
 from prefect_loader.connectors.metrika_loader.change_utils import format_auth_fingerprint
@@ -22,8 +23,11 @@ MAX_PARALLEL_FETCH = 9
 
 
 @task(name="Metrika loader: date range", retries=2, retry_delay_seconds=25, timeout_seconds=60 * 60 * 6)
-async def run_metrika_range(start_date: str, end_date: str) -> None:
-    """Load Metrika data for all counters in the provided date window."""
+async def run_metrika_range(start_date: str, end_date: str, counter_id: int | None = None) -> None:
+    """Load Metrika data for all counters or one counter in the provided date window."""
+    if counter_id is not None:
+        await upload_data_for_single_counter(counter_id, start_date, end_date)
+        return
     await upload_data_for_all_counters(start_date, end_date)
 
 
@@ -188,5 +192,8 @@ async def metrika_loader_flow(
     if not start_date or not end_date:
         raise ValueError("start_date and end_date are required when track_changes is False")
 
-    logger.info("Starting Metrika load for %s → %s", start_date, end_date)
-    await run_metrika_range(start_date=start_date, end_date=end_date)
+    if counter_id is not None:
+        logger.info("Starting Metrika load for counter %s: %s → %s", counter_id, start_date, end_date)
+    else:
+        logger.info("Starting Metrika load for all counters: %s → %s", start_date, end_date)
+    await run_metrika_range(start_date=start_date, end_date=end_date, counter_id=counter_id)

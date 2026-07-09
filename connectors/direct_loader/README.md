@@ -63,11 +63,14 @@ direct_loader_flow  (connectors/direct_loader/prefect/flows.py)
 | `token`     | OAuth-токен Яндекс.Директ                                                    |
 | `container` | Название агентства / источника                                               |
 | `type`      | `agency_token` / `agency_parsed` / `not_agency_token`                        |
+| `analytics_enabled` | `0` — грузить только `light`; `1` — грузить `light` и `analytics`     |
 
 Типы токенов:
 - `agency_token` — агентский токен; при каждом запуске система автоматически получает список клиентов через `agencyclients` и сохраняет их с типом `agency_parsed`
 - `agency_parsed` — клиент, найденный через агентский аккаунт
 - `not_agency_token` — токен конкретного клиента без агентского доступа
+
+Массовые ежедневные выгрузки профиля `analytics` берут только Direct-логины с `analytics_enabled = 1`. Профиль `light` грузит всех клиентов. Ручная выгрузка одного логина через бот использует выбранный профиль явно.
 
 Управление токенами — через Telegram-бот (раздел Директ) или напрямую через `AsyncDirectDatabase` из `connectors/direct_loader/prefect/clickhouse_utils.py`.
 

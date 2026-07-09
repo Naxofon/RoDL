@@ -10,6 +10,13 @@ from .logging_utils import get_logger
 from .uploader import YaStatUploader
 
 
+def _analytics_enabled(row: dict) -> bool:
+    value = row.get("analytics_enabled", 0)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 async def refresh_agency_clients(access_db: AsyncDirectDatabase, *, profile: str = DEFAULT_DB_PROFILE):
     """
     Ensure Accesses contains up-to-date client logins for every agency token.
@@ -44,7 +51,12 @@ async def refresh_agency_clients(access_db: AsyncDirectDatabase, *, profile: str
         )
 
 
-async def collect_direct_login_tokens(access_db: AsyncDirectDatabase, *, profile: str = DEFAULT_DB_PROFILE) -> dict[str, str]:
+async def collect_direct_login_tokens(
+    access_db: AsyncDirectDatabase,
+    *,
+    profile: str = DEFAULT_DB_PROFILE,
+    require_analytics_enabled: bool = False,
+) -> dict[str, str]:
     """Return login→token mapping for Direct, refreshing agency tokens if present."""
     await refresh_agency_clients(access_db, profile=profile)
     rows = await access_db.fetch_direct_access_rows(include_null_type=True)
@@ -65,6 +77,8 @@ async def collect_direct_login_tokens(access_db: AsyncDirectDatabase, *, profile
         if service and service != "direct":
             continue
         if subtype not in (DIRECT_TYPE_AGENCY_PARSED, DIRECT_TYPE_NOT_AGENCY, None):
+            continue
+        if require_analytics_enabled and not _analytics_enabled(row):
             continue
 
         new_prio = subtype_priority.get(subtype, 0)

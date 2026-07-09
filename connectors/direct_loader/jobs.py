@@ -84,7 +84,11 @@ async def plan_direct_reload_jobs(
     failed_clients: list[dict[str, Any]] = []
 
     try:
-        login_tokens = await collect_direct_login_tokens(access_db, profile=profile)
+        login_tokens = await collect_direct_login_tokens(
+            access_db,
+            profile=profile,
+            require_analytics_enabled=profile == "analytics" and login is None,
+        )
         if not login_tokens:
             get_logger().warning("No Direct tokens found in Accesses; nothing to reload.")
             return jobs, clients_without_changes, failed_clients

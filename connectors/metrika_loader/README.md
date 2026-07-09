@@ -19,7 +19,7 @@ connectors/metrika_loader/
 ├── change_utils.py          # AsyncRequestLimiter, GoalMetadata, classify_goals и утилиты
 ├── jobs.py                  # MetrikaReloadJob, plan_metrika_reload_jobs
 ├── operations.py            # Массовые операции: upload, fetch/write для заданий
-├── uploader.py              # YaMetrikaUploader — загрузка из Logs API и Reporting API
+├── uploader.py              # YaMetrikaUploader — загрузка из Logs API + фильтрация по ключам Reports API
 ├── prefect/
 │   ├── flows.py             # Prefect flow и tasks-обёртки
 │   ├── clickhouse_utils.py  # AsyncMetrikaDatabase
@@ -93,7 +93,7 @@ CLICKHOUSE_ACCESS_PASSWORD=access_password
 |-------------------|----------|------------------------------------------|
 | `dateTime`        | DateTime | Дата и время визита                      |
 | `visitID`         | Int64    | Уникальный идентификатор визита          |
-| `visits`          | Int64    | Количество визитов                       |
+| `visits`          | Int64    | Всегда `1` для строки с `visitID`        |
 | `g_goal_*`        | Int64    | Цели с "madd" в названии                |
 | `u_goal_*`        | Bool     | Все цели в бинарном формате (уникальные) |
 | `g_sum_goal`      | Int64    | Сумма по g_goal_*                        |
@@ -107,13 +107,15 @@ CLICKHOUSE_ACCESS_PASSWORD=access_password
 
 | Метод | Описание |
 |-------|----------|
-| `load_metrika(counter_id, token, start_date, end_date)` | Параллельно запрашивает Logs API и Reporting API, объединяет данные по `visitID` |
+| `load_metrika(counter_id, token, start_date, end_date)` | Загружает `logs`, получает из `reports` ключи `clientID + dateTime`, удаляет визиты из `logs`, которых нет в `reports`, и подготавливает DataFrame к записи |
 | `upload_data()` | Вызывает `load_metrika`, затем пишет результат в ClickHouse через `AsyncMetrikaDatabase` |
 | `split_date_range(start, end, days)` | Дробит диапазон на чанки заданной длины |
 
 Особенности:
 - Logs API: создаёт задачу логов, ожидает готовности, скачивает части
-- Reporting API: опрашивает с шагом 5 дней, собирает агрегаты по `visitID`
+- Reports API: опрашивается чанками по 5 дней и используется только как источник ключей `ym:s:clientID + ym:s:dateTime`
+- Фильтрация: из `logs` удаляются только строки, для которых нет точного совпадения `clientID + dateTime` в `reports`
+- Белый список: строки с `clientID = 0` не удаляются, даже если такого ключа нет в `reports`
 - Классификация целей: `g_goal_*` (name содержит "madd"), `u_goal_*` (все остальные, уникальные)
 - Дедупликация по `visitID` после записи
 

@@ -156,3 +156,10 @@ volumes:
   clickhouse_data:
   clickhouse_logs:
   connector_configs:
+
+#================
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.200.10.0/24

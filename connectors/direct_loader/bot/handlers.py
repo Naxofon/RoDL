@@ -45,6 +45,9 @@ class RemoveDirectClient(StatesGroup):
 class RemoveDirectAgency(StatesGroup):
     waiting_for_login = State()
 
+class ToggleDirectAnalytics(StatesGroup):
+    waiting_for_login = State()
+
 _EMPTY_MARKERS = {"-", "none", "null", "nan", ""}
 
 
@@ -100,6 +103,7 @@ async def handle_yd_clients(callback_query: types.CallbackQuery):
                 "token": row.get("token") or "",
                 "service": row.get("service") or "",
                 "subtype": row.get("subtype") or "",
+                "analytics_enabled": int(row.get("analytics_enabled") or 0),
             }
             for row in await db.fetch_direct_access_rows(include_null_type=True)
             if not row.get("service") or row.get("service") == "direct"
@@ -107,7 +111,10 @@ async def handle_yd_clients(callback_query: types.CallbackQuery):
         if not rows:
             await callback_query.message.answer("⚠ Клиенты не найдены.")
             return
-        df = pd.DataFrame(rows, columns=["login", "container", "token", "service", "subtype"])
+        df = pd.DataFrame(
+            rows,
+            columns=["login", "container", "token", "service", "subtype", "analytics_enabled"],
+        )
         csv_bytes = df.to_csv(index=False).encode('utf-8')
         input_file = types.BufferedInputFile(
             file=csv_bytes,
@@ -228,7 +235,6 @@ async def process_add_yd_client(message: types.Message, state: FSMContext):
         elif token_type == DIRECT_TYPE_NOT_AGENCY:
             if not normalized_login:
                 raise ValueError("login_required")
-            await db.delete_access(normalized_login, container=normalized_container, type_value=DIRECT_TYPE_NOT_AGENCY)
             await db.upsert_access_records(
                 [normalized_login],
                 token,
@@ -243,7 +249,6 @@ async def process_add_yd_client(message: types.Message, state: FSMContext):
         elif token_type == DIRECT_TYPE_AGENCY_PARSED:
             if not normalized_login:
                 raise ValueError("login_required")
-            await db.delete_access(normalized_login, container=normalized_container, type_value=DIRECT_TYPE_AGENCY_PARSED)
             await db.upsert_access_records(
                 [normalized_login],
                 token,
@@ -258,7 +263,6 @@ async def process_add_yd_client(message: types.Message, state: FSMContext):
         else:
             if not normalized_login:
                 raise ValueError("login_required")
-            await db.delete_access(normalized_login, container=normalized_container, type_value=token_type)
             await db.upsert_access_records(
                 [normalized_login],
                 token,
@@ -339,6 +343,70 @@ async def process_remove_yd_client(message: types.Message, state: FSMContext):
             )
     except Exception as e:
         await message.answer(f"❌ Ошибка удаления: {_format_error(e)}")
+    finally:
+        await state.clear()
+
+
+@router_direct.callback_query(lambda c: c.data in {"command_enable_yd_analytics", "command_disable_yd_analytics"})
+async def handle_toggle_yd_analytics(callback_query: types.CallbackQuery, state: FSMContext):
+    if await _deny_if_alpha(callback_query):
+        return
+    enabled = callback_query.data == "command_enable_yd_analytics"
+    await state.update_data(analytics_enabled=enabled)
+    await callback_query.message.answer(
+        "Отправьте логин клиента, для которого нужно "
+        f"{'включить' if enabled else 'выключить'} аналитическую БД."
+    )
+    await state.set_state(ToggleDirectAnalytics.waiting_for_login)
+    await callback_query.answer()
+
+
+@router_direct.message(ToggleDirectAnalytics.waiting_for_login)
+async def process_toggle_yd_analytics(message: types.Message, state: FSMContext):
+    db = AsyncDirectDatabase()
+    await db.init_db()
+    text = await _require_text(message, reply_markup=await _get_direct_menu(message.from_user.id))
+    if text is None:
+        return
+    try:
+        data = await state.get_data()
+        enabled = bool(data.get("analytics_enabled"))
+        parts = text.split()
+        if len(parts) != 1:
+            raise ValueError("expected_single_login")
+        normalized_login = AsyncDirectDatabase._normalize_identifier(parts[0])
+        if not normalized_login:
+            raise ValueError("expected_single_login")
+
+        rows = await db.fetch_direct_access_rows(include_null_type=True)
+        normalized_target = AsyncDirectDatabase._normalize_login(normalized_login)
+        exists = any(
+            (row.get("service") in (None, "direct"))
+            and AsyncDirectDatabase._normalize_login(row.get("login")) == normalized_target
+            for row in rows
+        )
+        if not exists:
+            await message.answer(
+                f"⚠ Записи для логина '{normalized_login}' не найдены.",
+                reply_markup=await _get_direct_menu(message.from_user.id),
+            )
+            return
+
+        await db.set_analytics_enabled(normalized_login, enabled)
+        await message.answer(
+            f"✅ Аналитическая БД для '{normalized_login}': {'включена' if enabled else 'выключена'}.",
+            reply_markup=await _get_direct_menu(message.from_user.id),
+        )
+    except ValueError:
+        await message.answer(
+            "⚠ Укажите только логин клиента (например, <code>example_login</code>).",
+            reply_markup=await _get_direct_menu(message.from_user.id),
+        )
+    except Exception as e:
+        await message.answer(
+            f"❌ Ошибка обновления флага аналитики: {_format_error(e)}",
+            reply_markup=await _get_direct_menu(message.from_user.id),
+        )
     finally:
         await state.clear()
 

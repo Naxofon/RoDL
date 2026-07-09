@@ -129,6 +129,19 @@ class AsyncDirectDatabase:
             self.metadata.tables.setdefault("Accesses", True)
         return rows
 
+    async def set_analytics_enabled(self, login: str, enabled: bool) -> None:
+        """Enable or disable analytics-profile scheduled uploads for a Direct login."""
+        normalized_login = self._normalize_login(login)
+        if not normalized_login:
+            raise ValueError("login_required")
+        await self._access_db.set_access_analytics_enabled(
+            normalized_login,
+            enabled,
+            service_type="direct",
+            include_null_type=True,
+        )
+        self.metadata.tables.setdefault("Accesses", True)
+
     async def add_agency_client_list_to_table(self, client_list, token: str, table: str):
         """Replace Direct tokens for an agency client list."""
         container = self._container_from_legacy(table)

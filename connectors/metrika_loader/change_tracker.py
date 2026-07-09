@@ -147,11 +147,11 @@ class MetrikaChangeTracker:
             "date1": start_date,
             "date2": end_date,
             "accuracy": "1",
-            "proposed_accuracy": "true",
-            "include_undefined": "false",
+            "proposed_accuracy": "false",
+            "include_undefined": "true",
             "lang": "ru",
             "limit": "100000",
-            "attribution": "lastsign",
+            "attribution": "cross_device_last_significant",
         }
 
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
@@ -745,6 +745,14 @@ class MetrikaChangeTracker:
                 missing_goal_cols,
             )
 
+        def _goal_value_for_day(df: pd.DataFrame, day: date, column: str) -> int:
+            if df.empty or day not in df.index or column not in df.columns:
+                return 0
+            value = df.loc[day, column]
+            if isinstance(value, pd.Series):
+                value = value.iloc[0]
+            return int(pd.to_numeric(pd.Series([value]), errors="coerce").fillna(0).iloc[0])
+
         days_with_changes: list[str] = []
 
         cursor = start
@@ -768,38 +776,30 @@ class MetrikaChangeTracker:
                 continue
 
             mismatched = api_visits != db_visits
-            api_conv_known = api_conversions
-            db_conv_known = db_conversions
             conversions_mismatch = False
             if self.compare_conversions:
                 if db_goal_ids:
-                    if missing_goal_cols:
-                        conversions_mismatch = False
-                    else:
-                        if cursor in api_goals_df.index and api_goal_cols_for_db:
-                            api_conv_known = int(
-                                pd.to_numeric(
-                                    api_goals_df.loc[cursor, api_goal_cols_for_db],
-                                    errors="coerce",
-                                )
-                                .fillna(0)
-                                .sum()
-                            )
-                        else:
-                            api_conv_known = 0
+                    conversion_deltas: list[tuple[int, int, int]] = []
+                    comparable_goal_ids = sorted(
+                        (api_goal_ids_present & db_goal_ids_present) - ignored_goal_ids
+                    )
+                    for goal_id in comparable_goal_ids:
+                        api_value = _goal_value_for_day(api_goals_df, cursor, f"goal_{goal_id}")
+                        db_value = _goal_value_for_day(db_goals_df, cursor, f"u_goal_{goal_id}")
+                        if api_value != db_value:
+                            conversion_deltas.append((goal_id, api_value, db_value))
 
-                        if cursor in db_goals_df.index and db_goal_cols_existing:
-                            db_conv_known = int(
-                                pd.to_numeric(
-                                    db_goals_df.loc[cursor, db_goal_cols_existing],
-                                    errors="coerce",
-                                )
-                                .fillna(0)
-                                .sum()
-                            )
-                        else:
-                            db_conv_known = 0
-                        conversions_mismatch = api_conv_known != db_conv_known
+                    if conversion_deltas:
+                        conversions_mismatch = True
+                        logger.debug(
+                            "Counter %s: per-goal conversion mismatch %s: %s",
+                            self.counter_id,
+                            cursor,
+                            "; ".join(
+                                f"{goal_id}:api={api_value} db={db_value}"
+                                for goal_id, api_value, db_value in conversion_deltas[:15]
+                            ),
+                        )
                 else:
                     conversions_mismatch = api_conversions != db_conversions
 

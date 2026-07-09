@@ -96,7 +96,7 @@ class DirectChangeTracker:
         if goals:
             params["Goals"] = goals
             params["FieldNames"].append("Conversions")
-            params["AttributionModels"] = ["LSC"]
+            params["AttributionModels"] = ["LSCCD"]
 
         body = json.dumps({"method": "get", "params": params}).encode()
 
@@ -168,6 +168,12 @@ class DirectChangeTracker:
             frames.append(df)
 
         api_df = pd.concat(frames, axis=1, join="outer").loc[:, lambda d: ~d.columns.duplicated()]
+        rename_dict = {}
+        for i in api_df.columns:
+            if i.endswith('_LSCCD'):
+                rename_dict[i] = i.replace('_LSCCD', '_LSC')
+
+        api_df = api_df.rename(columns=rename_dict)
 
         conv_cols = [c for c in api_df.columns if c.lower().startswith("conversions")]
         for col in conv_cols:
@@ -275,6 +281,7 @@ class DirectChangeTracker:
                     reasons.append(f"Cost(API:{api_cost} DB:{db_cost} diff:{abs(api_cost - db_cost)})")
                 if conversions_mismatch:
                     reasons.extend(mismatched_conversions)
+
 
                 if reasons:
                     get_logger().debug(

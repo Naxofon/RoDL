@@ -33,13 +33,116 @@ class YaMetrikaUploader:
         self.token = token
         self.login = login
         self.semaphore = asyncio.Semaphore(3)
+        self.attribution = 'cross_device_last_significant'
+
+    @staticmethod
+    def _coerce_param_array(value) -> list:
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped or stripped in {'[]', 'nan', 'NaN', 'None'}:
+                return []
+            try:
+                parsed = ast.literal_eval(stripped)
+            except (SyntaxError, ValueError):
+                return []
+            if isinstance(parsed, (list, tuple)):
+                return list(parsed)
+            return []
+
+        try:
+            if pd.isna(value):
+                return []
+        except (TypeError, ValueError):
+            return []
+
+        return []
+
+    @classmethod
+    def _extract_param_value(cls, keys, values, target_key="yclid"):
+        target = str(target_key).strip().lower()
+        keys_list = cls._coerce_param_array(keys)
+        values_list = cls._coerce_param_array(values)
+
+        for index, key in enumerate(keys_list):
+            try:
+                if pd.isna(key):
+                    continue
+            except (TypeError, ValueError):
+                continue
+
+            if str(key).strip().lower() != target:
+                continue
+            if index >= len(values_list):
+                continue
+
+            value = values_list[index]
+            try:
+                if pd.isna(value):
+                    continue
+            except (TypeError, ValueError):
+                continue
+
+            value_text = str(value).strip()
+            if not value_text or value_text in {'nan', 'NaN', 'None'}:
+                continue
+            return value_text
+
+        return None
+
+    @staticmethod
+    def _filter_logs_by_report_keys(df_logs: pd.DataFrame, df_report: pd.DataFrame) -> pd.DataFrame:
+        """Keep only Logs API rows that have an exact clientID + dateTime match in Reports API."""
+        if df_logs is None or df_logs.empty:
+            return pd.DataFrame() if df_logs is None else df_logs.copy()
+        if df_report is None or df_report.empty:
+            return df_logs.iloc[0:0].copy()
+
+        key_columns = ["ym:s:clientID", "ym:s:dateTime"]
+        missing_logs_columns = [column for column in key_columns if column not in df_logs.columns]
+        missing_report_columns = [column for column in key_columns if column not in df_report.columns]
+        if missing_logs_columns:
+            raise KeyError(f"Logs API dataframe is missing key columns: {missing_logs_columns}")
+        if missing_report_columns:
+            raise KeyError(f"Reports API dataframe is missing key columns: {missing_report_columns}")
+
+        logs = df_logs.copy()
+        logs["_logs_order"] = range(len(logs))
+        reports = df_report[key_columns].copy()
+
+        for frame in (logs, reports):
+            frame["ym:s:clientID"] = frame["ym:s:clientID"].astype("string")
+            frame["ym:s:dateTime"] = pd.to_datetime(frame["ym:s:dateTime"], errors="coerce")
+
+        logs = logs.dropna(subset=key_columns)
+        zero_client_logs = logs[logs["ym:s:clientID"] == "0"].copy()
+        logs_for_match = logs[logs["ym:s:clientID"] != "0"].copy()
+        reports = reports.dropna(subset=key_columns).drop_duplicates()
+        if reports.empty:
+            if zero_client_logs.empty:
+                return logs.iloc[0:0].drop(columns=["_logs_order"], errors="ignore")
+            return (
+                zero_client_logs
+                .sort_values("_logs_order")
+                .drop(columns=["_logs_order"])
+                .reset_index(drop=True)
+            )
+
+        filtered = logs_for_match.merge(reports, on=key_columns, how="inner")
+        if not zero_client_logs.empty:
+            filtered = pd.concat([zero_client_logs, filtered], ignore_index=True)
+        filtered = filtered.sort_values("_logs_order").drop(columns=["_logs_order"])
+        return filtered.reset_index(drop=True)
 
     def preprocess_data(self, df):
         """
-        Preprocesses the combined DataFrame by cleaning and transforming various columns.
+        Preprocesses the Logs API DataFrame by cleaning and transforming various columns.
 
         Parameters:
-            df (pd.DataFrame): Combined DataFrame from Yandex Metrika APIs.
+            df (pd.DataFrame): DataFrame returned by Yandex Metrika Logs API.
 
         Returns:
             pd.DataFrame: Preprocessed DataFrame.
@@ -50,6 +153,19 @@ class YaMetrikaUploader:
 
         df.columns = df.columns.str.replace('^ym:s:', '', regex=True)
 
+        def _normalize_string_null_markers(frame: pd.DataFrame) -> pd.DataFrame:
+            string_like_columns = frame.select_dtypes(
+                include=['object', 'string']
+            ).columns
+            if len(string_like_columns) == 0:
+                return frame
+            normalized = frame.copy()
+            normalized[string_like_columns] = normalized[string_like_columns].mask(
+                normalized[string_like_columns].isin(['nan', 'NaN', 'None']),
+                np.nan,
+            )
+            return normalized
+
         device_category_mapping = {
             1: "десктоп",
             2: "мобильные телефоны",
@@ -57,9 +173,7 @@ class YaMetrikaUploader:
             4: "TV"
         }
 
-        columns_to_replace = [
-            'ageInterval', 'gender', 'regionArea', 'screenFormat'
-        ]
+        columns_to_replace = ['screenFormat']
 
         df['goalsDateTime'] = df['goalsDateTime'].apply(
             lambda x: x.replace("\\'", "'") if isinstance(x, str) else x
@@ -111,26 +225,25 @@ class YaMetrikaUploader:
 
         df = df.drop(columns=['goalsID', 'goalsDateTime', 'goal_counts'])
 
-        df["deviceCategory"] = df["deviceCategory"].replace(
-            device_category_mapping
-        )
+        if 'deviceCategory' in df.columns:
+            df["deviceCategory"] = df["deviceCategory"].replace(
+                device_category_mapping
+            )
 
-        df['interest'] = df['interest'].replace(
-            r'^\s*$', np.nan, regex=True
-        )
+        existing_columns_to_replace = [
+            column for column in columns_to_replace if column in df.columns
+        ]
+        if existing_columns_to_replace:
+            df[existing_columns_to_replace] = df[existing_columns_to_replace].replace(
+                {'undefined': np.nan, 'Не определено': np.nan}
+            )
 
-        df[columns_to_replace] = df[columns_to_replace].replace(
-            {'undefined': np.nan, 'Не определено': np.nan}
-        )
+        if 'dateTimeUTC' in df.columns:
+            df['dateTimeUTC'] = pd.to_datetime(df['dateTimeUTC'], errors='coerce')
+        if 'dateTime' in df.columns:
+            df['dateTime'] = pd.to_datetime(df['dateTime'], errors='coerce')
 
-        df['dateTimeUTC'] = pd.to_datetime(df['dateTimeUTC'], errors='coerce')
-        df['dateTime'] = pd.to_datetime(df['dateTime'], errors='coerce')
-
-        df['isRobot'] = df['isRobot'].map({
-            'Люди': False,
-            'Роботы': True
-        })
-        for col in ['isRobot', 'bounce', 'isNewUser']:
+        for col in ['bounce', 'isNewUser']:
             if col in df.columns:
                 df[col] = (
                     pd.to_numeric(df[col], errors='coerce')
@@ -138,123 +251,119 @@ class YaMetrikaUploader:
                     .astype('uint8')
                 )
 
-        df.replace(
-            {'nan': np.nan, 'NaN': np.nan, 'None': np.nan}, inplace=True
-        )
+        df = _normalize_string_null_markers(df)
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
-        df.dropna(subset=['visitDuration', 'pageViews'], inplace=True)
 
-        integer_columns = ['userVisitsPeriod']
+        if {'parsedParamsKey2', 'parsedParamsKey3'}.issubset(df.columns):
+            df['yclid'] = df.apply(
+                lambda row: self._extract_param_value(
+                    row['parsedParamsKey2'],
+                    row['parsedParamsKey3'],
+                    'yclid',
+                ),
+                axis=1,
+            )
+        else:
+            df['yclid'] = None
 
-        for col in integer_columns:
-            if col in df.columns:
-                df[col] = df[col].fillna(-1)
+        required_metric_columns = [
+            column for column in ['visitDuration', 'pageViews'] if column in df.columns
+        ]
+        for column in required_metric_columns:
+            df[column] = pd.to_numeric(df[column], errors='coerce').fillna(0)
 
-        for col in integer_columns:
-            if col in df.columns:
-                df[col] = df[col].astype(int)
-
-        for col in integer_columns:
-            if col in df.columns:
-                df[col] = df[col].replace(-1, np.nan)
+        if 'visitID' in df.columns:
+            df['visits'] = df['visitID'].notna().astype('int64')
 
         goal_columns = df.filter(regex='^goal_').columns.tolist()
         df['sum_goal'] = df[goal_columns].sum(axis=1)
 
-        df = df.astype(
-            {
-                'sum_goal': 'int',
-                'visitID': 'str',
-                'gender': 'str',
-                'interest': 'str',
-                'isRobot': 'uint8',
-                'regionArea': 'str',
-                'userVisits': 'int',
-                'ageInterval': 'str',
-                'visits': 'int',
-                'lastsignSearchPhrase': 'str',
-                'lastsignSourceEngine': 'str',
-                'clientID': 'str',
-                'counterUserIDHash': 'str',
-                'lastsignTrafficSource': 'str',
-                'lastsignAdvEngine': 'str',
-                'lastsignReferalSource': 'str',
-                'lastsignSearchEngineRoot': 'str',
-                'lastsignSearchEngine': 'str',
-                'ipAddress': 'str',
-                'bounce': 'uint8',
-                'lastsignSocialNetwork': 'str',
-                'visitDuration': 'int',
-                'screenFormat': 'str',
-                'pageViews': 'int',
-                'startURL': 'str',
-                'endURL': 'str',
-                'mobilePhone': 'str',
-                'mobilePhoneModel': 'str',
-                'operatingSystemRoot': 'str',
-                'operatingSystem': 'str',
-                'browser': 'str',
-                'browserMajorVersion': 'int',
-                'isNewUser': 'uint8',
-                'regionCountry': 'str',
-                'browserLanguage': 'str',
-                'lastsignRecommendationSystem': 'str',
-                'lastsignMessenger': 'str',
-                'regionCity': 'str',
-                'deviceCategory': 'str',
-                'clientTimeZone': 'int',
-                'UTMCampaign': 'str',
-                'UTMContent': 'str',
-                'UTMMedium': 'str',
-                'UTMSource': 'str',
-                'UTMTerm': 'str',
-                'referer': 'str',
-                'parsedParamsKey1': 'str',
-                'parsedParamsKey2': 'str',
-                'lastsignDirectBannerGroup': 'int',
-                'lastsignDirectClickBanner': 'int',
-                'lastsignDirectClickOrderName': 'str',
-                'lastsignClickBannerGroupName': 'str',
-                'lastsignDirectClickBannerName': 'str',
-                'lastsignDirectPhraseOrCond': 'str',
-                'lastsignDirectPlatformType': 'str',
-                'lastsignDirectPlatform': 'str',
-                'lastsignDirectConditionType': 'str',
-                'offlineCallTalkDuration': 'str',
-                'offlineCallHoldDuration': 'str',
-                'offlineCallMissed': 'str',
-                'offlineCallTag': 'str',
-                'offlineCallFirstTimeCaller': 'str',
-                'offlineCallURL': 'str',
-                'browserCountry': 'str',
-                'screenOrientationName': 'str',
-                'screenWidth': 'str',
-                'screenHeight': 'str',
-                'physicalScreenWidth': 'str',
-                'physicalScreenHeight': 'str',
-                'windowClientWidth': 'str',
-                'windowClientHeight': 'str',
-                'browserMinorVersion': 'str',
-                'browserEngine': 'str',
-                'browserEngineVersion1': 'str',
-                'browserEngineVersion2': 'str',
-                'browserEngineVersion3': 'str',
-                'browserEngineVersion4': 'str',
-            }
-        )
+        astype_map = {
+            'sum_goal': 'int',
+            'visitID': 'str',
+            'visits': 'int',
+            'clientID': 'str',
+            'counterUserIDHash': 'str',
+            'lastsignTrafficSource': 'str',
+            'lastsignAdvEngine': 'str',
+            'lastsignReferalSource': 'str',
+            'lastsignSearchEngineRoot': 'str',
+            'lastsignSearchEngine': 'str',
+            'ipAddress': 'str',
+            'bounce': 'uint8',
+            'lastsignSocialNetwork': 'str',
+            'visitDuration': 'int',
+            'screenFormat': 'str',
+            'pageViews': 'int',
+            'startURL': 'str',
+            'endURL': 'str',
+            'mobilePhone': 'str',
+            'mobilePhoneModel': 'str',
+            'operatingSystemRoot': 'str',
+            'operatingSystem': 'str',
+            'browser': 'str',
+            'browserMajorVersion': 'int',
+            'isNewUser': 'uint8',
+            'regionCountry': 'str',
+            'browserLanguage': 'str',
+            'lastsignRecommendationSystem': 'str',
+            'lastsignMessenger': 'str',
+            'regionCity': 'str',
+            'deviceCategory': 'str',
+            'clientTimeZone': 'int',
+            'UTMCampaign': 'str',
+            'UTMContent': 'str',
+            'UTMMedium': 'str',
+            'UTMSource': 'str',
+            'UTMTerm': 'str',
+            'referer': 'str',
+            'parsedParamsKey1': 'str',
+            'parsedParamsKey2': 'str',
+            'parsedParamsKey3': 'str',
+            'lastsignDirectBannerGroup': 'int',
+            'lastsignDirectClickBanner': 'int',
+            'lastsignDirectClickOrderName': 'str',
+            'lastsignClickBannerGroupName': 'str',
+            'lastsignDirectClickBannerName': 'str',
+            'lastsignDirectPhraseOrCond': 'str',
+            'lastsignDirectPlatformType': 'str',
+            'lastsignDirectPlatform': 'str',
+            'lastsignDirectConditionType': 'str',
+            'offlineCallTalkDuration': 'str',
+            'offlineCallHoldDuration': 'str',
+            'offlineCallMissed': 'str',
+            'offlineCallTag': 'str',
+            'offlineCallFirstTimeCaller': 'str',
+            'offlineCallURL': 'str',
+            'browserCountry': 'str',
+            'screenOrientationName': 'str',
+            'screenWidth': 'str',
+            'screenHeight': 'str',
+            'physicalScreenWidth': 'str',
+            'physicalScreenHeight': 'str',
+            'windowClientWidth': 'str',
+            'windowClientHeight': 'str',
+            'browserMinorVersion': 'str',
+            'browserEngine': 'str',
+            'browserEngineVersion1': 'str',
+            'browserEngineVersion2': 'str',
+            'browserEngineVersion3': 'str',
+            'browserEngineVersion4': 'str',
+        }
+        df = df.astype({column: dtype for column, dtype in astype_map.items() if column in df.columns})
 
-        df = df.replace({'nan': np.nan, 'NaN': np.nan, 'None': np.nan})
+        df = _normalize_string_null_markers(df)
 
         string_columns = [
-            'clientID', 'visitID', 'counterUserIDHash', 'gender', 'interest', 'regionArea', 'regionCountry', 'ageInterval', 
+            'clientID', 'visitID', 'counterUserIDHash', 'regionCountry',
             'lastsignTrafficSource', 'lastsignAdvEngine', 'lastsignReferalSource',
             'lastsignSearchEngineRoot', 'lastsignSearchEngine', 'ipAddress', 'lastsignSocialNetwork',
             'screenFormat', 'startURL', 'endURL', 'mobilePhone', 'mobilePhoneModel',
             'operatingSystemRoot', 'operatingSystem', 'browser', 'browserLanguage',
             'lastsignRecommendationSystem', 'lastsignMessenger', 'regionCity',
             'deviceCategory', 'UTMCampaign', 'UTMContent', 'UTMMedium', 'UTMSource',
-            'UTMTerm', 'referer', 'parsedParamsKey1', 'parsedParamsKey2', 'lastsignDirectClickOrderName',
-            'lastsignClickBannerGroupName', 'lastsignDirectClickBannerName', 'lastsignSearchPhrase', 'lastsignSourceEngine',
+            'UTMTerm', 'referer', 'parsedParamsKey1', 'parsedParamsKey2', 'parsedParamsKey3', 'lastsignDirectClickOrderName',
+            'lastsignClickBannerGroupName', 'lastsignDirectClickBannerName',
             'lastsignDirectPhraseOrCond', 'lastsignDirectPlatformType', 'lastsignDirectPlatform',
             'lastsignDirectConditionType', 'offlineCallTalkDuration', 'offlineCallHoldDuration',
             'offlineCallMissed', 'offlineCallTag', 'offlineCallFirstTimeCaller', 'offlineCallURL', 'screenOrientationName',
@@ -264,7 +373,7 @@ class YaMetrikaUploader:
         ]
 
         bool_columns = [
-            'isRobot', 'bounce', 'isNewUser'
+            'bounce', 'isNewUser'
         ]
 
         date_time_columns = df.filter(regex='^d_').columns.tolist()
@@ -284,11 +393,10 @@ class YaMetrikaUploader:
 
         return df
 
-
     async def load_metrika(self, counter_id, token, start_date, end_date):
         """
-        Downloads data from Yandex Metrika Logs API and Reporting API concurrently using asynchronous programming,
-        merges the data on 'ym:s:visitID', and returns the combined DataFrame.
+        Downloads data from Yandex Metrika Logs API, filters it by Reports API keys,
+        and returns the processed DataFrame.
 
         Parameters:
             counter_id (str): Counter ID.
@@ -297,7 +405,7 @@ class YaMetrikaUploader:
             end_date (str): End date in 'YYYY-MM-DD' format.
 
         Returns:
-            pd.DataFrame: Combined DataFrame containing data from both APIs.
+            pd.DataFrame: Processed DataFrame built from Logs API data.
         """
 
         logger = get_run_logger()
@@ -477,35 +585,37 @@ class YaMetrikaUploader:
             Downloads logs from the Yandex Metrika Logs API and stores the DataFrame in df_logs.
             """
 
+
             max_create_retries = 3
             max_status_retries = 3
             max_download_retries = 3
 
             fields_list = [
-                'ym:s:dateTimeUTC', 'ym:s:dateTime',
-                'ym:s:goalsID', 'ym:s:goalsDateTime',
-                'ym:s:visitID', 'ym:s:clientID', 'ym:s:counterUserIDHash',
-                'ym:s:lastsignTrafficSource','ym:s:lastsignAdvEngine',
-                'ym:s:lastsignReferalSource','ym:s:lastsignSearchEngineRoot',
-                'ym:s:lastsignSearchEngine', 'ym:s:ipAddress', 'ym:s:bounce',
-                'ym:s:lastsignSocialNetwork', 'ym:s:visitDuration', 'ym:s:screenFormat',
-                'ym:s:pageViews', 'ym:s:startURL', 'ym:s:endURL', 'ym:s:mobilePhone', 'ym:s:mobilePhoneModel',
-                'ym:s:operatingSystemRoot', 'ym:s:operatingSystem', 'ym:s:browser', 'ym:s:browserMajorVersion',
-                'ym:s:isNewUser', 'ym:s:regionCountry', 'ym:s:browserLanguage', 'ym:s:lastsignRecommendationSystem', 'ym:s:lastsignMessenger',
-                'ym:s:regionCity', 'ym:s:deviceCategory', 'ym:s:clientTimeZone',
-                'ym:s:UTMCampaign', 'ym:s:UTMContent', 'ym:s:UTMMedium',
-                'ym:s:UTMSource', 'ym:s:UTMTerm', 'ym:s:referer', 'ym:s:parsedParamsKey1', 'ym:s:parsedParamsKey2',
-                'ym:s:lastsignDirectClickOrder', 'ym:s:lastsignDirectBannerGroup',
-                'ym:s:lastsignDirectClickBanner', 'ym:s:lastsignDirectClickOrderName',
-                'ym:s:lastsignClickBannerGroupName', 'ym:s:lastsignDirectClickBannerName',
-                'ym:s:lastsignDirectPhraseOrCond', 'ym:s:lastsignDirectPlatformType',
-                'ym:s:lastsignDirectPlatform', 'ym:s:lastsignDirectConditionType',
-                'ym:s:offlineCallTalkDuration', 'ym:s:offlineCallHoldDuration', 'ym:s:offlineCallMissed',
-                'ym:s:offlineCallTag', 'ym:s:offlineCallFirstTimeCaller', 'ym:s:offlineCallURL', 'ym:s:screenOrientationName',
-                'ym:s:screenWidth', 'ym:s:screenHeight', 'ym:s:physicalScreenWidth', 'ym:s:physicalScreenHeight', 'ym:s:windowClientWidth',
-                'ym:s:windowClientHeight', 'ym:s:browserMinorVersion', 'ym:s:browserEngine', 'ym:s:browserEngineVersion1',
-                'ym:s:browserEngineVersion2', 'ym:s:browserEngineVersion3', 'ym:s:browserEngineVersion4', 'ym:s:browserCountry'
-            ]
+                        'ym:s:dateTimeUTC', 'ym:s:dateTime',
+                        'ym:s:goalsID', 'ym:s:goalsDateTime',
+                        'ym:s:visitID', 'ym:s:clientID', 'ym:s:counterUserIDHash',
+                        f'ym:s:{self.attribution}TrafficSource',f'ym:s:{self.attribution}AdvEngine',
+                        f'ym:s:{self.attribution}ReferalSource',f'ym:s:{self.attribution}SearchEngineRoot',
+                        f'ym:s:{self.attribution}SearchEngine', 'ym:s:ipAddress', 'ym:s:bounce',
+                        f'ym:s:{self.attribution}SocialNetwork', 'ym:s:visitDuration', 'ym:s:screenFormat',
+                        'ym:s:pageViews', 'ym:s:startURL', 'ym:s:endURL', 'ym:s:mobilePhone', 'ym:s:mobilePhoneModel',
+                        'ym:s:operatingSystemRoot', 'ym:s:operatingSystem', 'ym:s:browser', 'ym:s:browserMajorVersion',
+                        'ym:s:isNewUser', 'ym:s:regionCountry', 'ym:s:browserLanguage', f'ym:s:{self.attribution}RecommendationSystem', f'ym:s:{self.attribution}Messenger',
+                        'ym:s:regionCity', 'ym:s:deviceCategory', 'ym:s:clientTimeZone',
+                        'ym:s:UTMCampaign', 'ym:s:UTMContent', 'ym:s:UTMMedium',
+                        'ym:s:UTMSource', 'ym:s:UTMTerm', 'ym:s:referer', 'ym:s:parsedParamsKey1', 'ym:s:parsedParamsKey2','ym:s:parsedParamsKey3',
+                        f'ym:s:{self.attribution}DirectClickOrder', f'ym:s:{self.attribution}DirectBannerGroup',
+                        f'ym:s:{self.attribution}DirectClickBanner', f'ym:s:{self.attribution}DirectClickOrderName',
+                        f'ym:s:{self.attribution}ClickBannerGroupName', f'ym:s:{self.attribution}DirectClickBannerName',
+                        f'ym:s:{self.attribution}DirectPhraseOrCond', f'ym:s:{self.attribution}DirectPlatformType',
+                        f'ym:s:{self.attribution}DirectPlatform', f'ym:s:{self.attribution}DirectConditionType',
+                        'ym:s:offlineCallTalkDuration', 'ym:s:offlineCallHoldDuration', 'ym:s:offlineCallMissed',
+                        'ym:s:offlineCallTag', 'ym:s:offlineCallFirstTimeCaller', 'ym:s:offlineCallURL', 'ym:s:screenOrientationName',
+                        'ym:s:screenWidth', 'ym:s:screenHeight', 'ym:s:physicalScreenWidth', 'ym:s:physicalScreenHeight', 'ym:s:windowClientWidth',
+                        'ym:s:windowClientHeight', 'ym:s:browserMinorVersion', 'ym:s:browserEngine', 'ym:s:browserEngineVersion1',
+                        'ym:s:browserEngineVersion2', 'ym:s:browserEngineVersion3', 'ym:s:browserEngineVersion4', 'ym:s:browserCountry'
+                    ]
+
 
             headers = {'Authorization': f'OAuth {token}'}
             fields = ','.join(fields_list)
@@ -521,7 +631,8 @@ class YaMetrikaUploader:
                             'date1': start_date,
                             'date2': end_date,
                             'fields': fields,
-                            'source': 'visits'
+                            'source': 'visits',
+                            'attribution': self.attribution
                         }
                         async with session.post(create_url, params=params) as response:
                             response.raise_for_status()
@@ -592,8 +703,8 @@ class YaMetrikaUploader:
                                 response.raise_for_status()
                                 content = await response.read()
 
-                                df = pd.read_csv(BytesIO(content), 
-                                                sep='\t', 
+                                df = pd.read_csv(BytesIO(content),
+                                                sep='\t',
                                                 dtype={'ym:s:clientID': 'str', 'ym:s:counterUserIDHash': 'str', 'ym:s:visitID': 'str'},
                                                 low_memory=False)
                                 df_list.append(df)
@@ -642,28 +753,18 @@ class YaMetrikaUploader:
         async def _report_metrika():
             nonlocal df_report
             """
-            Downloads data from the Yandex Metrika Reporting API and stores the DataFrame in df_report.
+            Downloads minimal visit keys from the Yandex Metrika Reporting API and stores them in df_report.
             """
 
-            met = [
-                'ym:s:visits'
-            ]
-
-            dim = [
-                'ym:s:visitID', 'ym:s:gender', 'ym:s:interest', 
-                'ym:s:isRobot', 'ym:s:regionArea',  'ym:s:userVisits', 
-                'ym:s:userVisitsPeriod', 'ym:s:ageInterval',
-                'ym:s:lastsignSearchPhrase', 'ym:s:lastsignSourceEngine'
-            ]
-
+            metrics = ["ym:s:visits"]
+            dimensions = ["ym:s:clientID", "ym:s:dateTime"]
             limit = 100000
             start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
             end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
             delta = timedelta(days=5)
-
             all_data = []
 
-            headers = {'Authorization': f'OAuth {token}'}
+            headers = {"Authorization": f"OAuth {token}"}
             report_limiters: dict[str, AsyncRequestLimiter] = getattr(self, "_report_limiters", {})
             report_limiters_lock: asyncio.Lock = getattr(self, "_report_limiters_lock", asyncio.Lock())
 
@@ -684,99 +785,102 @@ class YaMetrikaUploader:
                 current_start = start_date_obj
                 while current_start <= end_date_obj:
                     current_end = min(current_start + delta - timedelta(days=1), end_date_obj)
-                    params = {
-                        'ids': int(counter_id),
-                        'metrics': ','.join(met),
-                        'dimensions': ','.join(dim),
-                        'date1': current_start.strftime("%Y-%m-%d"),
-                        'date2': current_end.strftime("%Y-%m-%d"),
-                        'accuracy': '1',
-                        'proposed_accuracy': 'true',
-                        'include_undefined': 'false',
-                        'lang': 'ru',
-                        'limit': str(limit)
-                    }
-                    url = 'https://api-metrika.yandex.net/stat/v1/data'
-                    try:
-                        limiter = await _get_report_limiter()
-                        async with limiter:
-                            async with session.get(url, params=params) as response:
-                                response.raise_for_status()
-                                resp_json = await response.json()
-                                data = resp_json.get('data', [])
-                                if not data:
-                                    logger.debug(f'No data for period {current_start.strftime("%Y-%m-%d")} - {current_end.strftime("%Y-%m-%d")}')
-                                else:
-                                    records = []
-                                    for item in data:
-                                        dimensions = item['dimensions']
-                                        metrics = item['metrics']
-                                        record = {}
-                                        for idx, dim_item in enumerate(dimensions):
-                                            record[dim[idx]] = dim_item.get('name') or dim_item.get('id')
-                                        for idx, metric_value in enumerate(metrics):
-                                            record[met[idx]] = metric_value
-                                        records.append(record)
-                                    df = pd.DataFrame(records)
-                                    all_data.append(df)
-                                    logger.debug(f'Data retrieved for period {current_start.strftime("%Y-%m-%d")} - {current_end.strftime("%Y-%m-%d")}')
-                    except aiohttp.ClientResponseError as e:
-                        if e.status in (429, 420):
-                            logger.warning(
-                                "Rate limit hit for counter %s (%s-%s), HTTP %s. Sleeping 3s.",
-                                counter_id,
+                    offset = 1
+
+                    while True:
+                        params = {
+                            "ids": int(counter_id),
+                            "metrics": ",".join(metrics),
+                            "dimensions": ",".join(dimensions),
+                            "date1": current_start.strftime("%Y-%m-%d"),
+                            "date2": current_end.strftime("%Y-%m-%d"),
+                            "accuracy": "1",
+                            "proposed_accuracy": "true",
+                            "include_undefined": "false",
+                            "lang": "ru",
+                            "limit": str(limit),
+                            "offset": str(offset),
+                        }
+                        url = "https://api-metrika.yandex.net/stat/v1/data"
+
+                        try:
+                            limiter = await _get_report_limiter()
+                            async with limiter:
+                                async with session.get(url, params=params) as response:
+                                    response.raise_for_status()
+                                    resp_json = await response.json()
+                        except aiohttp.ClientResponseError as e:
+                            if e.status in (429, 420):
+                                logger.warning(
+                                    "Rate limit hit for counter %s (%s-%s), HTTP %s. Sleeping 3s.",
+                                    counter_id,
+                                    current_start.strftime("%Y-%m-%d"),
+                                    current_end.strftime("%Y-%m-%d"),
+                                    e.status,
+                                )
+                                await asyncio.sleep(3)
+                                continue
+                            logger.error(
+                                "Error retrieving reports data for period %s - %s: %s",
                                 current_start.strftime("%Y-%m-%d"),
                                 current_end.strftime("%Y-%m-%d"),
-                                e.status,
+                                e,
                             )
-                            await asyncio.sleep(3)
-                            continue
-                        logger.error(f'Error retrieving data for period {current_start.strftime("%Y-%m-%d")} - {current_end.strftime("%Y-%m-%d")}: {e}')
-                        return
-                    except Exception as e:
-                        logger.error(f'Unexpected error retrieving data: {e}')
-                        return
+                            return
+                        except Exception as e:
+                            logger.error("Unexpected error retrieving reports data: %s", e)
+                            return
+
+                        data = resp_json.get("data", [])
+                        if data:
+                            records = []
+                            for item in data:
+                                dims = item.get("dimensions", [])
+                                record = {}
+                                for idx, dim_item in enumerate(dims):
+                                    record[dimensions[idx]] = dim_item.get("name") or dim_item.get("id")
+                                for idx, metric_value in enumerate(item.get("metrics", [])):
+                                    record[metrics[idx]] = metric_value
+                                records.append(record)
+                            all_data.append(pd.DataFrame(records))
+
+                        total_rows = int(resp_json.get("total_rows", 0) or 0)
+                        if offset + limit > total_rows or not data:
+                            break
+                        offset += limit
 
                     current_start += delta
 
-                if all_data:
-                    final_df = pd.concat(all_data, ignore_index=True)
-                else:
-                    logger.debug('No data retrieved from Reports API.')
-                    return None
+            if not all_data:
+                logger.debug("No data retrieved from Reports API.")
+                return
 
-                agg_functions = {
-                    'ym:s:gender': 'first',
-                    'ym:s:interest': lambda x: ', '.join(x.dropna().unique()),
-                    'ym:s:isRobot': 'first',
-                    'ym:s:regionArea': 'first',
-                    'ym:s:userVisits': 'first',
-                    'ym:s:userVisitsPeriod': 'first',
-                    'ym:s:ageInterval': 'first',
-                    'ym:s:visits': 'first',
-                    'ym:s:lastsignSearchPhrase': 'first',
-                    'ym:s:lastsignSourceEngine': 'first'
-                }
-
-                final_df = final_df.groupby('ym:s:visitID', as_index=False).agg(agg_functions)
-                final_df['ym:s:visitID'] = final_df['ym:s:visitID'].astype(str)
-
-                df_report = final_df
+            report_keys = pd.concat(all_data, ignore_index=True)
+            report_keys = report_keys[dimensions].copy()
+            report_keys["ym:s:clientID"] = report_keys["ym:s:clientID"].astype("string")
+            report_keys["ym:s:dateTime"] = pd.to_datetime(report_keys["ym:s:dateTime"], errors="coerce")
+            report_keys = report_keys.dropna(subset=dimensions).drop_duplicates().reset_index(drop=True)
+            df_report = report_keys
 
         await asyncio.gather(
             _download_metrica_logs(),
-            _report_metrika()
+            _report_metrika(),
         )
 
         if df_logs is None or df_report is None:
-            logger.debug('Failed to retrieve data from one or both APIs.')
+            logger.debug("Failed to retrieve data from one or both Metrika APIs.")
             return pd.DataFrame()
 
         df_logs['ym:s:visitID'] = df_logs['ym:s:visitID'].astype(str)
-        df_report['ym:s:visitID'] = df_report['ym:s:visitID'].astype(str)
+        rename_cols = {}
+        for i in df_logs.columns:
+            if 'cross_device_last_significant' in i:
+                rename_cols[i] = i.replace('cross_device_last_significant', 'lastsign')
+                df_logs = df_logs.rename(columns=rename_cols)
+        df_logs['attribution'] = self.attribution
 
-        final_df = df_report.merge(df_logs, on='ym:s:visitID', how='left')
 
+        final_df = self._filter_logs_by_report_keys(df_logs, df_report)
         final_df = self.preprocess_data(final_df)
         final_df = _goal_modification(final_df, counter_id, token)
         final_df = final_df.replace({pd.NA: np.nan})
@@ -787,7 +891,7 @@ class YaMetrikaUploader:
 
         df = await self.load_metrika(
             counter_id=int(self.counter),
-            token=self.token, 
+            token=self.token,
             start_date=self.start,
             end_date=self.end
         )

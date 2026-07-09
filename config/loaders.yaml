@@ -24,13 +24,16 @@ loaders:
     display_name: "🎯 VK Ads"
     databases:
       vk: loader_vk
-  wordstat_loader:
+  add_client:
     enabled: true
-    display_name: "📈 Wordstat"
-    databases:
-      wordstat: loader_wordstat
-  custom_loader:
+    display_name: "➕ Add Client Access"
+  callibri_loader:
     enabled: true
-    display_name: "🧩 Custom AAM"
+    display_name: "☎️ Callibri"
     databases:
-      custom_loader: loader_custom
+      callibri: loader_callibri
+  roistat_loader:
+    enabled: true
+    display_name: "📝 Roistat"
+    databases:
+      roistat: loader_roistat

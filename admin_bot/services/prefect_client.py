@@ -82,6 +82,7 @@ async def wait_for_prefect_flow_run(
     Poll Prefect for run status and send a final message to the user when it finishes.
     Sends a warning if status cannot be fetched repeatedly or times out.
     """
+    deployment_line = f"Деплоймент: {deployment_name}\n"
     api_url = get_env("PREFECT_API_URL", "http://prefect-server:4200/api").rstrip("/")
     flow_run_url = f"{api_url}/flow_runs/{run_id}"
     deadline = time.monotonic() + max_wait_seconds
@@ -93,7 +94,7 @@ async def wait_for_prefect_flow_run(
             if time.monotonic() >= deadline:
                 await notify_message.answer(
                     "⚠️ Prefect run не завершился за ожидаемое время.\n"
-                    f"Деплоймент: {deployment_name}\n"
+                    f"{deployment_line}"
                     f"Run ID: <code>{run_id}</code>\n"
                     f"Последний статус: {html.escape(last_state)}",
                 )
@@ -109,7 +110,7 @@ async def wait_for_prefect_flow_run(
                 if errors >= 3:
                     await notify_message.answer(
                         "⚠️ Не удалось получить статус Prefect run.\n"
-                        f"Деплоймент: {deployment_name}\n"
+                        f"{deployment_line}"
                         f"Run ID: <code>{run_id}</code>\n"
                         f"Ошибка: {html.escape(str(exc))}",
                     )
@@ -125,19 +126,20 @@ async def wait_for_prefect_flow_run(
                 if normalized_state in _TERMINAL_SUCCESS or state_name.upper() in _TERMINAL_SUCCESS:
                     await notify_message.answer(
                         "✅ Prefect run завершён.\n"
-                        f"Деплоймент: {deployment_name}\n"
+                        f"{deployment_line}"
                         f"Run ID: <code>{run_id}</code>\n"
                         f"Статус: {html.escape(state_name)}",
                     )
+                    return
                 else:
                     detail_text = f"\nДетали: {html.escape(str(state_message))}" if state_message else ""
                     await notify_message.answer(
                         "❌ Prefect run завершился с ошибкой.\n"
-                        f"Деплоймент: {deployment_name}\n"
+                        f"{deployment_line}"
                         f"Run ID: <code>{run_id}</code>\n"
                         f"Статус: {html.escape(state_name)}"
                         f"{detail_text}",
                     )
-                return
+                    return
 
             await asyncio.sleep(poll_interval)

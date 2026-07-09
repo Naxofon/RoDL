@@ -47,6 +47,8 @@ class AsyncMetrikaDatabase:
     Metrika loader wrapper retaining the historic AsyncMetrikaDatabase interface.
     """
 
+    TABLE_ORDER = ("dateTime",)
+
     def __init__(self):
         target_db = CLICKHOUSE_DB_METRIKA or CLICKHOUSE_DATABASE
         self._data_db = ClickhouseDatabase(database=target_db, user=CLICKHOUSE_USER, password=CLICKHOUSE_PASSWORD)
@@ -109,7 +111,11 @@ class AsyncMetrikaDatabase:
 
     async def write_dataframe_to_table(self, df: pd.DataFrame, table_name: str):
         """Insert a DataFrame into the Metrika table and track metadata."""
-        await self._data_db.write_dataframe(table_name, df)
+        await self._data_db.write_dataframe(
+            table_name,
+            df,
+            order=self.TABLE_ORDER,
+        )
         if not df.empty:
             self.metadata.tables.setdefault(table_name, True)
 
